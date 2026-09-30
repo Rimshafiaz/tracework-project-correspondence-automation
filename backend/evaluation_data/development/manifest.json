@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "dataset_version": "0.1.0",
+  "split": "development",
+  "status": "editable",
+  "case_files": [
+    "clear_match.json",
+    "conflicting_identity.json",
+    "partial_fulfillment.json"
+  ],
+  "content_hash": null
+}

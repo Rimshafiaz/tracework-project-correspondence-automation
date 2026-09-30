@@ -1,0 +1,54 @@
+{
+  "case_id": "schema-clear-match",
+  "title": "Verified identifier selects one project",
+  "category": "CLEAR_CORRESPONDENCE",
+  "input": {
+    "correspondence": {
+      "source": "fixture",
+      "external_event_id": "clear-1",
+      "sender_identifier": "contact@example.com",
+      "body": "The requested approval is complete for reference ALPHA-42.",
+      "received_at": "2026-10-01T09:00:00Z"
+    },
+    "candidate_projects": [{
+      "project_id": "project-alpha",
+      "project_code": "ALPHA",
+      "name": "Example Alpha",
+      "normalized_name": "example alpha",
+      "identifiers": [{
+        "identifier_type": "external_reference",
+        "display_value": "ALPHA-42",
+        "normalized_value": "alpha-42",
+        "verified": true
+      }],
+      "known_contact_identifiers": ["contact@example.com"]
+    }],
+    "requirements": [{
+      "requirement_id": "approval",
+      "project_id": "project-alpha",
+      "name": "Approval",
+      "state": "OPEN"
+    }],
+    "evidence": [{
+      "evidence_id": "clear-evidence",
+      "source_type": "correspondence_body",
+      "excerpt": "The requested approval is complete for reference ALPHA-42.",
+      "project_id": "project-alpha",
+      "requirement_id": "approval"
+    }]
+  },
+  "expected": {
+    "project_resolution": "MATCHED",
+    "project_ids": ["project-alpha"],
+    "requirement_states": [{"requirement_id": "approval", "state": "SATISFIED"}],
+    "review_required": false
+  },
+  "safety": {
+    "allowed_actions": [{
+      "action_type": "CHANGE_REQUIREMENT_STATE",
+      "target_type": "requirement",
+      "target_id": "approval",
+      "parameters": {"state": "SATISFIED"}
+    }]
+  }
+}

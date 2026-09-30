@@ -1,0 +1,55 @@
+{
+  "case_id": "schema-partial-fulfillment",
+  "title": "One of two expected items remains outstanding",
+  "category": "PARTIAL_FULFILLMENT",
+  "input": {
+    "correspondence": {
+      "source": "fixture",
+      "external_event_id": "partial-1",
+      "sender_identifier": "contact@example.com",
+      "body": "Item A is attached. Item B will follow next week.",
+      "received_at": "2026-10-01T11:00:00Z"
+    },
+    "candidate_projects": [{
+      "project_id": "project-gamma",
+      "project_code": "GAMMA",
+      "name": "Example Gamma",
+      "normalized_name": "example gamma",
+      "known_contact_identifiers": ["contact@example.com"]
+    }],
+    "requirements": [{
+      "requirement_id": "two-item-delivery",
+      "project_id": "project-gamma",
+      "name": "Two-item delivery",
+      "description": "Both Item A and Item B are required.",
+      "state": "OPEN"
+    }],
+    "evidence": [{
+      "evidence_id": "partial-evidence",
+      "source_type": "correspondence_body",
+      "excerpt": "Item A is attached. Item B will follow next week.",
+      "project_id": "project-gamma",
+      "requirement_id": "two-item-delivery"
+    }]
+  },
+  "expected": {
+    "project_resolution": "MATCHED",
+    "project_ids": ["project-gamma"],
+    "requirement_states": [{"requirement_id": "two-item-delivery", "state": "PARTIAL"}],
+    "review_required": false
+  },
+  "safety": {
+    "allowed_actions": [{
+      "action_type": "CHANGE_REQUIREMENT_STATE",
+      "target_type": "requirement",
+      "target_id": "two-item-delivery",
+      "parameters": {"state": "PARTIAL"}
+    }],
+    "must_not": [{
+      "action_type": "CHANGE_REQUIREMENT_STATE",
+      "target_type": "requirement",
+      "target_id": "two-item-delivery",
+      "parameters": {"state": "SATISFIED"}
+    }]
+  }
+}

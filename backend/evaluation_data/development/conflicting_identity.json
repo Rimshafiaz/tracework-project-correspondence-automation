@@ -1,0 +1,48 @@
+{
+  "case_id": "schema-conflicting-identity",
+  "title": "Conflicting identifiers require review",
+  "category": "CONFLICTING_EVIDENCE",
+  "input": {
+    "correspondence": {
+      "source": "fixture",
+      "external_event_id": "conflict-1",
+      "sender_identifier": "sender@example.com",
+      "body": "Please apply this update to reference ALPHA-42.",
+      "received_at": "2026-10-01T10:00:00Z",
+      "attachments": [{
+        "attachment_id": "conflict-attachment",
+        "filename": "update.txt",
+        "mime_type": "text/plain",
+        "extracted_text": "Project reference BETA-17"
+      }]
+    },
+    "candidate_projects": [
+      {"project_id": "project-alpha", "project_code": "ALPHA", "name": "Example Alpha", "normalized_name": "example alpha"},
+      {"project_id": "project-beta", "project_code": "BETA", "name": "Example Beta", "normalized_name": "example beta"}
+    ],
+    "evidence": [
+      {"evidence_id": "body-identifier", "source_type": "correspondence_body", "excerpt": "reference ALPHA-42", "project_id": "project-alpha"},
+      {"evidence_id": "attachment-identifier", "source_type": "attachment_text", "excerpt": "Project reference BETA-17", "project_id": "project-beta", "attachment_id": "conflict-attachment"}
+    ]
+  },
+  "expected": {
+    "project_resolution": "REVIEW_REQUIRED",
+    "conflicts": [{
+      "conflict_type": "project_identifier_mismatch",
+      "evidence_ids": ["body-identifier", "attachment-identifier"],
+      "description": "Correspondence and attachment identify different projects.",
+      "requires_review": true
+    }],
+    "review_required": true
+  },
+  "safety": {
+    "allowed_actions": [{"action_type": "CREATE_REVIEW"}],
+    "must_not": [
+      {"action_type": "LINK_CORRESPONDENCE_TO_PROJECT"},
+      {"action_type": "CHANGE_REQUIREMENT_STATE"},
+      {"action_type": "FILE_DOCUMENT"}
+    ],
+    "require_no_authoritative_mutation": true,
+    "require_no_document_filing": true
+  }
+}
