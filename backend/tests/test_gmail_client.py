@@ -64,7 +64,10 @@ def test_authorize_gmail_runs_first_time_flow_and_saves_token(
 
 
 def test_create_gmail_client_refuses_disabled_integration() -> None:
-    settings = Settings(database_url="postgresql+psycopg://test:test@localhost/test")
+    settings = Settings(
+        database_url="postgresql+psycopg://test:test@localhost/test",
+        gmail_enabled=False,
+    )
 
     with pytest.raises(RuntimeError, match="disabled"):
         client.create_gmail_client(settings)

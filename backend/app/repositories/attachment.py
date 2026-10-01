@@ -2,8 +2,17 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.contracts.attachment_extraction import AttachmentExtractionMetadata, AttachmentExtractionResult
 from app.models.attachment import Attachment
 from app.models.enums import AttachmentProcessingState
+
+
+class AttachmentContentHashConflict(Exception):
+    pass
+
+
+class AttachmentExtractionMismatch(Exception):
+    pass
 
 
 class AttachmentRepository:
@@ -28,5 +37,48 @@ class AttachmentRepository:
             processing_state=AttachmentProcessingState.PENDING,
         )
         self.session.add(attachment)
+        self.session.flush()
+        return attachment
+
+    def set_content_hash(
+        self,
+        attachment: Attachment,
+        *,
+        content_hash: str,
+    ) -> Attachment:
+        if attachment.content_hash is None:
+            attachment.content_hash = content_hash
+            self.session.flush()
+            return attachment
+        if attachment.content_hash != content_hash:
+            raise AttachmentContentHashConflict(
+                f"Attachment {attachment.id} already has a different content hash"
+            )
+        return attachment
+
+    def save_extraction_result(
+        self,
+        attachment: Attachment,
+        *,
+        result: AttachmentExtractionResult,
+        metadata: AttachmentExtractionMetadata,
+    ) -> Attachment:
+        if attachment.id != result.attachment_id or attachment.size_bytes != result.source_size_bytes:
+            raise AttachmentExtractionMismatch("Extraction result does not match the attachment")
+        if result.content_hash is not None:
+            self.set_content_hash(attachment, content_hash=result.content_hash)
+
+        metadata_json = metadata.model_dump(mode="json")
+        unchanged = (
+            attachment.extracted_text == result.extracted_text
+            and attachment.extraction_metadata == metadata_json
+            and attachment.processing_state is result.status
+        )
+        if unchanged:
+            return attachment
+
+        attachment.extracted_text = result.extracted_text
+        attachment.extraction_metadata = metadata_json
+        attachment.processing_state = result.status
         self.session.flush()
         return attachment

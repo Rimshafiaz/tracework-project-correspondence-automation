@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     gmail_initial_after_epoch_seconds: int | None = None
     gmail_credentials_path: Path = Path(".secrets/gmail/credentials.json")
     gmail_token_path: Path = Path(".secrets/gmail/token.json")
+    attachment_max_size_bytes: int = Field(default=26_214_400, gt=0)
+    pdf_max_pages: int = Field(default=250, gt=0)
+    extraction_max_characters: int = Field(default=1_000_000, gt=0)
+    docx_max_paragraphs: int = Field(default=10_000, gt=0)
+    docx_max_tables: int = Field(default=500, gt=0)
+    docx_max_table_cells: int = Field(default=50_000, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

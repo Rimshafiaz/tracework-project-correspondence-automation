@@ -1,4 +1,4 @@
-from app.repositories.attachment import AttachmentRepository
+from app.repositories.attachment import AttachmentContentHashConflict, AttachmentExtractionMismatch, AttachmentRepository
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 from app.repositories.lineage import LineageRepository
@@ -9,6 +9,8 @@ from app.repositories.requirement import RequirementRepository
 
 __all__ = [
     "AttachmentRepository",
+    "AttachmentContentHashConflict",
+    "AttachmentExtractionMismatch",
     "CorrespondenceEventRepository",
     "CorrespondenceProjectLinkRepository",
     "LineageRepository",

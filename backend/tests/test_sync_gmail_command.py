@@ -72,7 +72,10 @@ def test_run_gmail_sync_rolls_back_transaction_on_failure(monkeypatch) -> None:
 def test_run_gmail_sync_refuses_disabled_integration(monkeypatch) -> None:
     create_client = MagicMock()
     monkeypatch.setattr(sync_gmail, "create_gmail_client", create_client)
-    settings = Settings(database_url="postgresql+psycopg://test:test@localhost/test")
+    settings = Settings(
+        database_url="postgresql+psycopg://test:test@localhost/test",
+        gmail_enabled=False,
+    )
 
     with pytest.raises(RuntimeError, match="disabled"):
         sync_gmail.run_gmail_sync(settings)

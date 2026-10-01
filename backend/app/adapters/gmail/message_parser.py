@@ -100,8 +100,13 @@ def _collect_parts(
     body = part.get("body") if isinstance(part.get("body"), dict) else {}
 
     if filename:
-        attachment_id = str(body.get("attachmentId") or part.get("partId") or "").strip()
-        if not attachment_id:
+        api_id = str(body.get("attachmentId", "")).strip()
+        part_id = str(part.get("partId", "")).strip()
+        if api_id:
+            attachment_id = f"api:{api_id}"
+        elif part_id:
+            attachment_id = f"part:{part_id}"
+        else:
             raise ValueError(f"Gmail attachment {filename!r} has no source identifier")
         attachments.append(
             GmailAttachment(

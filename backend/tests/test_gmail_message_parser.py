@@ -74,11 +74,32 @@ def test_prefers_plain_text_and_collects_nested_attachment_metadata() -> None:
 
     assert result.body == "Plain"
     assert result.attachments[0].model_dump() == {
-        "attachment_id": "attachment-1",
+        "attachment_id": "api:attachment-1",
         "filename": "report.pdf",
         "mime_type": "application/pdf",
         "size_bytes": 321,
     }
+
+
+def test_collects_inline_attachment_with_part_locator() -> None:
+    result = parse_gmail_message(
+        message(
+            {
+                "mimeType": "multipart/mixed",
+                "body": {},
+                "parts": [
+                    {
+                        "partId": "2",
+                        "mimeType": "application/pdf",
+                        "filename": "inline.pdf",
+                        "body": {"data": encoded("PDF bytes"), "size": 9},
+                    }
+                ],
+            }
+        )
+    )
+
+    assert result.attachments[0].attachment_id == "part:2"
 
 
 def test_uses_readable_html_fallback_without_script_or_style_content() -> None:
