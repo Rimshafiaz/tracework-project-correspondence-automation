@@ -10,6 +10,9 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16,<2",
     "fastapi>=0.116,<1",
+    "google-api-python-client>=2.180,<3",
+    "google-auth-httplib2>=0.2,<1",
+    "google-auth-oauthlib>=1.2,<2",
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.10,<3",

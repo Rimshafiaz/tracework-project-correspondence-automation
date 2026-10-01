@@ -36,6 +36,7 @@ def test_core_schema_constraints() -> None:
                 "review_items",
                 "review_item_candidate_projects",
                 "audit_events",
+                "ingestion_cursors",
             } <= set(inspect(connection).get_table_names())
 
             connection.execute(
@@ -89,6 +90,33 @@ def test_core_schema_constraints() -> None:
                 connection.execute(
                     text("DELETE FROM projects WHERE id = :id"),
                     {"id": project_id},
+                )
+
+            connection.execute(
+                text(
+                    "INSERT INTO ingestion_cursors "
+                    "(id, source, account_identifier, status, sync_scope) VALUES "
+                    "(:id, 'gmail', 'test@example.com', 'UNINITIALIZED', '{}')"
+                ),
+                {"id": uuid4()},
+            )
+            with pytest.raises(IntegrityError), connection.begin_nested():
+                connection.execute(
+                    text(
+                        "INSERT INTO ingestion_cursors "
+                        "(id, source, account_identifier, status, sync_scope) VALUES "
+                        "(:id, 'gmail', 'test@example.com', 'UNINITIALIZED', '{}')"
+                    ),
+                    {"id": uuid4()},
+                )
+            with pytest.raises(IntegrityError), connection.begin_nested():
+                connection.execute(
+                    text(
+                        "INSERT INTO ingestion_cursors "
+                        "(id, source, account_identifier, status, sync_scope) VALUES "
+                        "(:id, 'gmail', 'invalid@example.com', 'ACTIVE', '{}')"
+                    ),
+                    {"id": uuid4()},
                 )
         finally:
             transaction.rollback()

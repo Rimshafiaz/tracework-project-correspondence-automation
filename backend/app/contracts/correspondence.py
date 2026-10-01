@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 
 class NormalizedAttachment(BaseModel):
@@ -33,7 +33,7 @@ class NormalizedCorrespondenceEvent(BaseModel):
     body: str
     received_at: datetime
     attachments: tuple[NormalizedAttachment, ...] = ()
-    source_metadata: dict[str, object] | None = None
+    source_metadata: dict[str, JsonValue] | None = None
 
     @field_validator("source", "external_event_id", "sender_identifier")
     @classmethod

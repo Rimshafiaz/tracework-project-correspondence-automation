@@ -54,3 +54,22 @@ def test_gmail_mapper_produces_channel_neutral_contract() -> None:
     assert event.body == "First line\nSecond line"
     assert event.attachments[0].source_attachment_id == "attachment-1"
     assert not hasattr(event, "gmail_message_id")
+
+
+def test_gmail_mapper_preserves_full_body_when_selecting_latest_reply() -> None:
+    body = "Latest answer.\n\nOn Tue, Sep 30, 2026 Sender wrote:\nEarlier message"
+    message = GmailMessage(
+        message_id="message-2",
+        sender_header="sender@example.com",
+        body=body,
+        received_at=datetime(2026, 10, 1, tzinfo=UTC),
+    )
+
+    event = normalize_gmail_message(message)
+
+    assert event.body == "Latest answer."
+    assert event.source_metadata == {
+        "full_body": body,
+        "quoted_text_start": body.index("On Tue"),
+        "body_selection": "latest_reply",
+    }

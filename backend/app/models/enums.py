@@ -29,6 +29,12 @@ class AttachmentProcessingState(StrEnum):
     FAILED = "FAILED"
 
 
+class IngestionCursorStatus(StrEnum):
+    UNINITIALIZED = "UNINITIALIZED"
+    ACTIVE = "ACTIVE"
+    RESYNC_REQUIRED = "RESYNC_REQUIRED"
+
+
 class EvidenceValidity(StrEnum):
     VALID = "VALID"
     INVALIDATED = "INVALIDATED"

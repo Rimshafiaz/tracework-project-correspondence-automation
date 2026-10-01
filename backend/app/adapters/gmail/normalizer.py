@@ -4,6 +4,7 @@ from email.utils import parseaddr
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.contracts.correspondence import NormalizedAttachment, NormalizedCorrespondenceEvent
+from app.adapters.gmail.reply_boundary import select_latest_reply
 from app.normalization.correspondence import normalize_body, normalize_email
 
 
@@ -32,6 +33,15 @@ def normalize_gmail_message(message: GmailMessage) -> NormalizedCorrespondenceEv
     sender_name, sender_email = parseaddr(message.sender_header)
     normalized_sender_email = normalize_email(sender_email)
     sender_identifier = normalized_sender_email or message.sender_header.strip()
+    full_body = normalize_body(message.body)
+    reply_body = select_latest_reply(full_body)
+    source_metadata = None
+    if reply_body.quoted_text_start is not None:
+        source_metadata = {
+            "full_body": full_body,
+            "quoted_text_start": reply_body.quoted_text_start,
+            "body_selection": "latest_reply",
+        }
     return NormalizedCorrespondenceEvent(
         source="gmail",
         external_event_id=message.message_id.strip(),
@@ -42,7 +52,7 @@ def normalize_gmail_message(message: GmailMessage) -> NormalizedCorrespondenceEv
         sender_name=sender_name.strip() or None,
         sender_email=normalized_sender_email or None,
         subject=message.subject,
-        body=normalize_body(message.body),
+        body=reply_body.latest,
         received_at=message.received_at,
         attachments=tuple(
             NormalizedAttachment(
@@ -53,4 +63,5 @@ def normalize_gmail_message(message: GmailMessage) -> NormalizedCorrespondenceEv
             )
             for attachment in message.attachments
         ),
+        source_metadata=source_metadata,
     )
