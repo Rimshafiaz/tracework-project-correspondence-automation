@@ -42,6 +42,81 @@ def test_get_uses_the_project_primary_key() -> None:
     session.get.assert_called_once_with(Project, project_id)
 
 
+def test_find_by_normalized_codes_is_bounded_to_supplied_exact_codes() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+    expected = [
+        Project(
+            id=uuid4(),
+            project_code="PROJ-1",
+            name="Example Project",
+            normalized_name="example project",
+        )
+    ]
+    session.scalars.return_value.all.return_value = expected
+
+    result = repository.find_by_normalized_codes({"proj-1", "proj-2"})
+
+    assert result == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_find_by_normalized_codes_skips_database_for_empty_input() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+
+    assert repository.find_by_normalized_codes(set()) == []
+    session.scalars.assert_not_called()
+
+
+def test_find_by_normalized_names_is_exact_ordered_and_read_only() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+    expected = [
+        Project(
+            id=uuid4(),
+            project_code="PROJ-1",
+            name="Example Project",
+            normalized_name="example project",
+        )
+    ]
+    session.scalars.return_value.all.return_value = expected
+
+    result = repository.find_by_normalized_names({"example project"})
+
+    assert result == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_find_by_normalized_names_skips_empty_input() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+
+    assert repository.find_by_normalized_names(set()) == []
+    session.scalars.assert_not_called()
+
+
+def test_list_for_fuzzy_name_retrieval_is_ordered_and_read_only() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+    expected = [MagicMock(spec=Project)]
+    session.scalars.return_value.all.return_value = expected
+
+    assert repository.list_for_fuzzy_name_retrieval() == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._order_by_clauses) == 2
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
 def test_list_returns_filtered_paginated_projects() -> None:
     session = MagicMock(spec=Session)
     repository = ProjectRepository(session)

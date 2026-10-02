@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.models.project_identifier import ProjectIdentifier
+from app.models.project import Project
 from app.repositories.project_identifier import ProjectIdentifierRepository
 
 
@@ -80,6 +81,50 @@ def test_find_exact_can_include_unverified_identifiers() -> None:
 
     statement = session.scalars.call_args.args[0]
     assert len(statement._where_criteria) == 2
+
+
+def test_find_verified_exact_with_projects_uses_one_read_only_query() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectIdentifierRepository(session)
+    identifier = MagicMock(spec=ProjectIdentifier)
+    project = MagicMock(spec=Project)
+    session.execute.return_value = [(identifier, project)]
+
+    result = repository.find_verified_exact_with_projects(
+        {("repository", "example/platform"), ("client_ref", "client-1")}
+    )
+
+    assert result == [(identifier, project)]
+    statement = session.execute.call_args.args[0]
+    assert len(statement._where_criteria) == 2
+    assert len(statement._order_by_clauses) == 5
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_find_verified_exact_with_projects_skips_empty_input() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectIdentifierRepository(session)
+
+    assert repository.find_verified_exact_with_projects(set()) == []
+    session.execute.assert_not_called()
+
+
+def test_list_verified_type_with_projects_is_filtered_ordered_and_read_only() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectIdentifierRepository(session)
+    identifier = MagicMock(spec=ProjectIdentifier)
+    project = MagicMock(spec=Project)
+    session.execute.return_value = [(identifier, project)]
+
+    result = repository.list_verified_type_with_projects("alias")
+
+    assert result == [(identifier, project)]
+    statement = session.execute.call_args.args[0]
+    assert len(statement._where_criteria) == 2
+    assert len(statement._order_by_clauses) == 4
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
 
 
 def test_update_changes_only_provided_fields_without_committing() -> None:

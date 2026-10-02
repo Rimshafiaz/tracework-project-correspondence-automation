@@ -4,6 +4,7 @@ from app.repositories.correspondence_project_link import CorrespondenceProjectLi
 from app.repositories.lineage import LineageRepository
 from app.repositories.ingestion_cursor import IngestionCursorRepository
 from app.repositories.project import ProjectRepository
+from app.repositories.project_contact import ProjectContactRepository
 from app.repositories.project_identifier import ProjectIdentifierRepository
 from app.repositories.requirement import RequirementRepository
 
@@ -16,6 +17,7 @@ __all__ = [
     "LineageRepository",
     "IngestionCursorRepository",
     "ProjectIdentifierRepository",
+    "ProjectContactRepository",
     "ProjectRepository",
     "RequirementRepository",
 ]

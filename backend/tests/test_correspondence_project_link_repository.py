@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.models.project import Project
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 
 
@@ -77,3 +78,34 @@ def test_unique_lookup_returns_only_one_unambiguous_project() -> None:
         )
         is None
     )
+
+
+def test_find_approved_projects_for_conversation_is_distinct_and_read_only() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    expected = [MagicMock(spec=Project)]
+    session.scalars.return_value.all.return_value = expected
+
+    result = repository.find_approved_projects_for_conversation(
+        source="fixture",
+        external_conversation_id="conversation-1",
+    )
+
+    assert result == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 2
+    assert len(statement._order_by_clauses) == 2
+    assert statement._distinct is True
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_find_approved_projects_for_conversation_skips_blank_identity() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+
+    assert repository.find_approved_projects_for_conversation(
+        source="",
+        external_conversation_id="conversation-1",
+    ) == []
+    session.scalars.assert_not_called()

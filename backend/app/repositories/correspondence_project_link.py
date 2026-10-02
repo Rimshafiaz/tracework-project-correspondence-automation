@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.correspondence_event import CorrespondenceEvent
 from app.models.correspondence_project_link import CorrespondenceProjectLink
+from app.models.project import Project
 
 
 class CorrespondenceProjectLinkRepository:
@@ -49,3 +50,32 @@ class CorrespondenceProjectLinkRepository:
             external_conversation_id=external_conversation_id,
         )
         return project_ids[0] if len(project_ids) == 1 else None
+
+    def find_approved_projects_for_conversation(
+        self,
+        *,
+        source: str,
+        external_conversation_id: str,
+    ) -> Sequence[Project]:
+        if not source.strip() or not external_conversation_id.strip():
+            return []
+        statement = (
+            select(Project)
+            .join(
+                CorrespondenceProjectLink,
+                CorrespondenceProjectLink.project_id == Project.id,
+            )
+            .join(
+                CorrespondenceEvent,
+                CorrespondenceEvent.id
+                == CorrespondenceProjectLink.correspondence_event_id,
+            )
+            .where(
+                CorrespondenceEvent.source == source,
+                CorrespondenceEvent.external_conversation_id
+                == external_conversation_id,
+            )
+            .distinct()
+            .order_by(Project.project_code, Project.id)
+        )
+        return self.session.scalars(statement).all()

@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.project_identifier import ProjectIdentifier
+from app.models.project import Project
 
 
 class ProjectIdentifierRepository:
@@ -56,6 +57,52 @@ class ProjectIdentifierRepository:
         if verified_only:
             statement = statement.where(ProjectIdentifier.verified.is_(True))
         return self.session.scalars(statement).all()
+
+    def find_verified_exact_with_projects(
+        self,
+        identifier_pairs: set[tuple[str, str]],
+    ) -> Sequence[tuple[ProjectIdentifier, Project]]:
+        if not identifier_pairs:
+            return []
+        statement = (
+            select(ProjectIdentifier, Project)
+            .join(Project, Project.id == ProjectIdentifier.project_id)
+            .where(
+                tuple_(
+                    ProjectIdentifier.identifier_type,
+                    ProjectIdentifier.normalized_value,
+                ).in_(identifier_pairs),
+                ProjectIdentifier.verified.is_(True),
+            )
+            .order_by(
+                Project.project_code,
+                Project.id,
+                ProjectIdentifier.identifier_type,
+                ProjectIdentifier.normalized_value,
+                ProjectIdentifier.id,
+            )
+        )
+        return [tuple(row) for row in self.session.execute(statement)]
+
+    def list_verified_type_with_projects(
+        self,
+        identifier_type: str,
+    ) -> Sequence[tuple[ProjectIdentifier, Project]]:
+        statement = (
+            select(ProjectIdentifier, Project)
+            .join(Project, Project.id == ProjectIdentifier.project_id)
+            .where(
+                ProjectIdentifier.identifier_type == identifier_type,
+                ProjectIdentifier.verified.is_(True),
+            )
+            .order_by(
+                Project.project_code,
+                Project.id,
+                ProjectIdentifier.normalized_value,
+                ProjectIdentifier.id,
+            )
+        )
+        return [tuple(row) for row in self.session.execute(statement)]
 
     def update(
         self,

@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.enums import ProjectStatus
@@ -36,6 +36,30 @@ class ProjectRepository:
     def get_by_code(self, project_code: str) -> Project | None:
         statement = select(Project).where(Project.project_code == project_code)
         return self.session.scalar(statement)
+
+    def find_by_normalized_codes(self, project_codes: set[str]) -> Sequence[Project]:
+        if not project_codes:
+            return []
+        statement = (
+            select(Project)
+            .where(func.lower(Project.project_code).in_(project_codes))
+            .order_by(Project.project_code, Project.id)
+        )
+        return self.session.scalars(statement).all()
+
+    def find_by_normalized_names(self, normalized_names: set[str]) -> Sequence[Project]:
+        if not normalized_names:
+            return []
+        statement = (
+            select(Project)
+            .where(Project.normalized_name.in_(normalized_names))
+            .order_by(Project.project_code, Project.id)
+        )
+        return self.session.scalars(statement).all()
+
+    def list_for_fuzzy_name_retrieval(self) -> Sequence[Project]:
+        statement = select(Project).order_by(Project.project_code, Project.id)
+        return self.session.scalars(statement).all()
 
     def list(
         self,
