@@ -96,6 +96,7 @@ def retrieve_verified_identifier_candidates(
                 matched_value=identifier.normalized_value,
                 source=hint.source,
                 identifier_type=identifier.identifier_type,
+                source_record_id=identifier.id,
                 attachment_id=hint.attachment_id,
                 evidence_item_id=hint.evidence_item_id,
                 exact=True,
@@ -156,6 +157,7 @@ def retrieve_document_identifier_candidates(
                 matched_value=identifier.normalized_value,
                 source=hint.source,
                 identifier_type=identifier.identifier_type,
+                source_record_id=identifier.id,
                 attachment_id=hint.attachment_id,
                 evidence_item_id=hint.evidence_item_id,
                 exact=True,
@@ -239,6 +241,7 @@ def retrieve_name_and_alias_candidates(
                 matched_value=identifier.normalized_value,
                 source=hint.source,
                 identifier_type=identifier.identifier_type,
+                source_record_id=identifier.id,
                 attachment_id=hint.attachment_id,
                 evidence_item_id=hint.evidence_item_id,
                 exact=True,
@@ -286,6 +289,7 @@ def retrieve_contact_candidates(
                         signal_type=CandidateSignalType.PROJECT_CONTACT,
                         matched_value=sender_email,
                         source=CandidateSignalSource.PROJECT_RECORD,
+                        source_record_id=contact.id,
                         exact=True,
                     ),
                 ),
@@ -305,11 +309,11 @@ def retrieve_conversation_candidates(
     conversation_id = query.external_conversation_id.strip()
     candidates = []
     seen_project_ids = set()
-    projects = repository.find_approved_projects_for_conversation(
+    matches = repository.find_approved_links_with_projects_for_conversation(
         source=source,
         external_conversation_id=conversation_id,
     )
-    for project in projects:
+    for link, project in matches:
         if project.id in seen_project_ids:
             continue
         seen_project_ids.add(project.id)
@@ -324,6 +328,7 @@ def retrieve_conversation_candidates(
                         signal_type=CandidateSignalType.APPROVED_CONVERSATION,
                         matched_value=conversation_id,
                         source=CandidateSignalSource.APPROVED_CONVERSATION_LINK,
+                        source_record_id=link.id,
                         exact=True,
                         previously_approved=True,
                     ),
@@ -347,13 +352,20 @@ def retrieve_fuzzy_name_alias_candidates(
         for project in project_repository.list_for_fuzzy_name_retrieval()
     ]
     entries.extend(
-        (CandidateSignalType.FUZZY_ALIAS, identifier.normalized_value, project, "alias")
+        (
+            CandidateSignalType.FUZZY_ALIAS,
+            identifier.normalized_value,
+            project,
+            "alias",
+            identifier.id,
+        )
         for identifier, project in identifier_repository.list_verified_type_with_projects(
             PROJECT_ALIAS_IDENTIFIER_TYPE
         )
         if identifier.verified
         and identifier.identifier_type == PROJECT_ALIAS_IDENTIFIER_TYPE
     )
+    entries = [(*entry, None) if len(entry) == 4 else entry for entry in entries]
     choices = [entry[1] for entry in entries]
     projects_by_id: dict = {}
     signals_by_project_id: dict = {}
@@ -372,7 +384,13 @@ def retrieve_fuzzy_name_alias_candidates(
         for _, score, entry_index in matches:
             if score == 100:
                 continue
-            signal_type, matched_value, project, identifier_type = entries[entry_index]
+            (
+                signal_type,
+                matched_value,
+                project,
+                identifier_type,
+                source_record_id,
+            ) = entries[entry_index]
             if (
                 project.id not in selected_project_ids
                 and len(selected_project_ids) == options.max_candidates_per_hint
@@ -397,6 +415,7 @@ def retrieve_fuzzy_name_alias_candidates(
                     matched_value=matched_value,
                     source=hint.source,
                     identifier_type=identifier_type,
+                    source_record_id=source_record_id,
                     attachment_id=hint.attachment_id,
                     evidence_item_id=hint.evidence_item_id,
                     exact=False,
@@ -450,6 +469,7 @@ def merge_project_candidate_sets(
                     signal.matched_value,
                     signal.source,
                     signal.identifier_type,
+                    signal.source_record_id,
                     signal.attachment_id,
                     signal.evidence_item_id,
                     signal.exact,

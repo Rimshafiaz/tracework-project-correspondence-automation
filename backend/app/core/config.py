@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     docx_max_paragraphs: int = Field(default=10_000, gt=0)
     docx_max_tables: int = Field(default=500, gt=0)
     docx_max_table_cells: int = Field(default=50_000, gt=0)
+    google_api_key: SecretStr | None = None
+    project_resolver_model: str = "gemini-3.7-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -49,6 +51,14 @@ class Settings(BaseSettings):
         if self.gmail_initial_after_epoch_seconds < 0:
             raise ValueError("GMAIL_INITIAL_AFTER_EPOCH_SECONDS must be nonnegative")
         return self
+
+    @field_validator("project_resolver_model")
+    @classmethod
+    def reject_blank_project_resolver_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("PROJECT_RESOLVER_MODEL must not be blank")
+        return value
 
 
 @lru_cache

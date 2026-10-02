@@ -81,6 +81,7 @@ def test_fuzzy_verified_alias_preserves_alias_semantics() -> None:
     signal = result.candidates[0].signals[0]
     assert signal.signal_type is CandidateSignalType.FUZZY_ALIAS
     assert signal.identifier_type == "alias"
+    assert signal.source_record_id == alias.id
     assert signal.verified is True
 
 

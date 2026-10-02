@@ -29,7 +29,8 @@ def _contact_match(code: str, *, active: bool = True):
 
 def test_retrieves_active_contact_project_with_exact_email_signal() -> None:
     repository = MagicMock(spec=ProjectContactRepository)
-    repository.find_active_with_projects.return_value = [_contact_match("ONE")]
+    match = _contact_match("ONE")
+    repository.find_active_with_projects.return_value = [match]
     query = ProjectCandidateQuery(
         source="fixture",
         sender_email_normalized=" Person@Example.COM ",
@@ -42,6 +43,7 @@ def test_retrieves_active_contact_project_with_exact_email_signal() -> None:
     assert signal.signal_type is CandidateSignalType.PROJECT_CONTACT
     assert signal.source is CandidateSignalSource.PROJECT_RECORD
     assert signal.matched_value == "person@example.com"
+    assert signal.source_record_id == match[0].id
     assert signal.exact is True
 
 

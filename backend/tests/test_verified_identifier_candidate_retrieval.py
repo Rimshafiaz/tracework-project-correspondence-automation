@@ -60,6 +60,7 @@ def test_retrieves_verified_identifier_with_generic_type_and_provenance() -> Non
     signal = result.candidates[0].signals[0]
     assert signal.signal_type is CandidateSignalType.VERIFIED_IDENTIFIER
     assert signal.identifier_type == "repository"
+    assert signal.source_record_id == repository.find_verified_exact_with_projects.return_value[0][0].id
     assert signal.evidence_item_id is None
     assert signal.verified is True
 

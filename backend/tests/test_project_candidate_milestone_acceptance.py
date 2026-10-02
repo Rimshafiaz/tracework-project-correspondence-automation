@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from app.contracts.project_candidate import CandidateIdentifierHint, CandidateSetCardinality, CandidateSignalSource, CandidateSignalType, CandidateValueHint, ProjectCandidateQuery, ProjectCandidateSet
 from app.models.enums import ProjectStatus
+from app.models.correspondence_project_link import CorrespondenceProjectLink
 from app.models.project import Project
 from app.models.project_contact import ProjectContact
 from app.models.project_identifier import ProjectIdentifier
@@ -64,8 +65,15 @@ def test_all_deterministic_paths_remain_project_type_neutral_and_ambiguous() -> 
         [(address_identifier, construction)],
     ]
     contact_repository.find_active_with_projects.return_value = [(contact, software)]
-    conversation_repository.find_approved_projects_for_conversation.return_value = [
-        construction
+    conversation_repository.find_approved_links_with_projects_for_conversation.return_value = [
+        (
+            CorrespondenceProjectLink(
+                id=uuid4(),
+                correspondence_event_id=uuid4(),
+                project_id=construction.id,
+            ),
+            construction,
+        )
     ]
     query = ProjectCandidateQuery(
         source="fixture",
@@ -148,7 +156,7 @@ def test_arbitrary_identifier_types_flow_through_without_special_case_logic() ->
         [],
     ]
     contact_repository.find_active_with_projects.return_value = []
-    conversation_repository.find_approved_projects_for_conversation.return_value = []
+    conversation_repository.find_approved_links_with_projects_for_conversation.return_value = []
     query = ProjectCandidateQuery(
         source="fixture",
         identifiers=(

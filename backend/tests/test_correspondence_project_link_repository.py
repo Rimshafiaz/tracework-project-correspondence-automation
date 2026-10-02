@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.models.correspondence_project_link import CorrespondenceProjectLink
 from app.models.project import Project
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 
@@ -109,3 +110,26 @@ def test_find_approved_projects_for_conversation_skips_blank_identity() -> None:
         external_conversation_id="conversation-1",
     ) == []
     session.scalars.assert_not_called()
+
+
+def test_find_approved_links_preserves_exact_link_provenance() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    expected = [
+        (
+            MagicMock(spec=CorrespondenceProjectLink),
+            MagicMock(spec=Project),
+        )
+    ]
+    session.execute.return_value = expected
+
+    result = repository.find_approved_links_with_projects_for_conversation(
+        source="fixture",
+        external_conversation_id="conversation-1",
+    )
+
+    assert result == expected
+    statement = session.execute.call_args.args[0]
+    assert len(statement._where_criteria) == 2
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()

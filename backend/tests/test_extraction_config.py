@@ -56,3 +56,14 @@ def test_extraction_limits_must_be_positive(field: str, value: int) -> None:
 def test_invalid_extraction_limit_string_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(database_url=DATABASE_URL, pdf_max_pages="invalid")
+
+
+def test_project_resolver_model_is_configurable_and_non_blank() -> None:
+    settings = Settings(
+        database_url=DATABASE_URL,
+        project_resolver_model=" gemini-example ",
+    )
+
+    assert settings.project_resolver_model == "gemini-example"
+    with pytest.raises(ValidationError, match="must not be blank"):
+        Settings(database_url=DATABASE_URL, project_resolver_model=" ")

@@ -127,6 +127,7 @@ class ProjectCandidateSignal(BaseModel):
     matched_value: str
     source: CandidateSignalSource
     identifier_type: str | None = None
+    source_record_id: UUID | None = None
     attachment_id: UUID | None = None
     evidence_item_id: UUID | None = None
     exact: bool

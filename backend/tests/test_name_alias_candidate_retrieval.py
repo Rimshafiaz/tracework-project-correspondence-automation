@@ -72,9 +72,8 @@ def test_retrieves_verified_alias_and_combines_it_with_name_match() -> None:
     identifier_repository = MagicMock(spec=ProjectIdentifierRepository)
     project = _project("PORTAL", "Customer Portal")
     project_repository.find_by_normalized_names.return_value = [project]
-    identifier_repository.find_verified_exact_with_projects.return_value = [
-        _alias(project, "Customer Portal")
-    ]
+    alias_match = _alias(project, "Customer Portal")
+    identifier_repository.find_verified_exact_with_projects.return_value = [alias_match]
     query = ProjectCandidateQuery(
         source="fixture",
         normalized_names=(
@@ -95,6 +94,7 @@ def test_retrieves_verified_alias_and_combines_it_with_name_match() -> None:
         CandidateSignalType.ALIAS,
     ]
     assert result.candidates[0].signals[1].verified is True
+    assert result.candidates[0].signals[1].source_record_id == alias_match[0].id
 
 
 def test_alias_only_matches_can_remain_ambiguous() -> None:

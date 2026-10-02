@@ -114,7 +114,7 @@ def test_orchestrator_runs_paths_and_combines_code_and_contact_evidence() -> Non
     project_repository.find_by_normalized_names.return_value = []
     identifier_repository.find_verified_exact_with_projects.return_value = []
     contact_repository.find_active_with_projects.return_value = [(contact, project)]
-    conversation_repository.find_approved_projects_for_conversation.return_value = []
+    conversation_repository.find_approved_links_with_projects_for_conversation.return_value = []
     query = ProjectCandidateQuery(
         source="fixture",
         sender_email_normalized="person@example.com",

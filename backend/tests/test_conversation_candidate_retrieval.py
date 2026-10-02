@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from app.contracts.project_candidate import CandidateSetCardinality, CandidateSignalSource, CandidateSignalType, ProjectCandidateQuery
 from app.models.enums import ProjectStatus
+from app.models.correspondence_project_link import CorrespondenceProjectLink
 from app.models.project import Project
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 from app.services.project_candidate_retrieval import retrieve_conversation_candidates
@@ -18,10 +19,23 @@ def _project(code: str) -> Project:
     )
 
 
+def _match(project: Project):
+    return (
+        CorrespondenceProjectLink(
+            id=uuid4(),
+            correspondence_event_id=uuid4(),
+            project_id=project.id,
+        ),
+        project,
+    )
+
+
 def test_retrieves_previously_approved_conversation_project() -> None:
     repository = MagicMock(spec=CorrespondenceProjectLinkRepository)
     project = _project("ONE")
-    repository.find_approved_projects_for_conversation.return_value = [project]
+    repository.find_approved_links_with_projects_for_conversation.return_value = [
+        _match(project)
+    ]
     query = ProjectCandidateQuery(
         source=" Gmail ",
         external_conversation_id=" thread-1 ",
@@ -29,7 +43,7 @@ def test_retrieves_previously_approved_conversation_project() -> None:
 
     result = retrieve_conversation_candidates(query, repository)
 
-    repository.find_approved_projects_for_conversation.assert_called_once_with(
+    repository.find_approved_links_with_projects_for_conversation.assert_called_once_with(
         source="gmail",
         external_conversation_id="thread-1",
     )
@@ -38,13 +52,14 @@ def test_retrieves_previously_approved_conversation_project() -> None:
     assert signal.source is CandidateSignalSource.APPROVED_CONVERSATION_LINK
     assert signal.matched_value == "thread-1"
     assert signal.previously_approved is True
+    assert signal.source_record_id is not None
 
 
 def test_conflicting_conversation_links_remain_ambiguous() -> None:
     repository = MagicMock(spec=CorrespondenceProjectLinkRepository)
-    repository.find_approved_projects_for_conversation.return_value = [
-        _project("ONE"),
-        _project("TWO"),
+    repository.find_approved_links_with_projects_for_conversation.return_value = [
+        _match(_project("ONE")),
+        _match(_project("TWO")),
     ]
     query = ProjectCandidateQuery(
         source="fixture",
@@ -59,7 +74,7 @@ def test_conflicting_conversation_links_remain_ambiguous() -> None:
 
 def test_missing_or_unknown_conversation_returns_no_candidates() -> None:
     repository = MagicMock(spec=CorrespondenceProjectLinkRepository)
-    repository.find_approved_projects_for_conversation.return_value = []
+    repository.find_approved_links_with_projects_for_conversation.return_value = []
 
     missing = retrieve_conversation_candidates(
         ProjectCandidateQuery(source="fixture"), repository
@@ -74,13 +89,16 @@ def test_missing_or_unknown_conversation_returns_no_candidates() -> None:
 
     assert missing.candidates == ()
     assert unknown.candidates == ()
-    repository.find_approved_projects_for_conversation.assert_called_once()
+    repository.find_approved_links_with_projects_for_conversation.assert_called_once()
 
 
 def test_duplicate_project_rows_are_collapsed() -> None:
     repository = MagicMock(spec=CorrespondenceProjectLinkRepository)
     project = _project("ONE")
-    repository.find_approved_projects_for_conversation.return_value = [project, project]
+    repository.find_approved_links_with_projects_for_conversation.return_value = [
+        _match(project),
+        _match(project),
+    ]
     query = ProjectCandidateQuery(
         source="fixture",
         external_conversation_id="conversation-1",

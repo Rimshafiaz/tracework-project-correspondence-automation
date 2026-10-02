@@ -79,3 +79,33 @@ class CorrespondenceProjectLinkRepository:
             .order_by(Project.project_code, Project.id)
         )
         return self.session.scalars(statement).all()
+
+    def find_approved_links_with_projects_for_conversation(
+        self,
+        *,
+        source: str,
+        external_conversation_id: str,
+    ) -> Sequence[tuple[CorrespondenceProjectLink, Project]]:
+        if not source.strip() or not external_conversation_id.strip():
+            return []
+        statement = (
+            select(CorrespondenceProjectLink, Project)
+            .join(Project, Project.id == CorrespondenceProjectLink.project_id)
+            .join(
+                CorrespondenceEvent,
+                CorrespondenceEvent.id
+                == CorrespondenceProjectLink.correspondence_event_id,
+            )
+            .where(
+                CorrespondenceEvent.source == source,
+                CorrespondenceEvent.external_conversation_id
+                == external_conversation_id,
+            )
+            .order_by(
+                Project.project_code,
+                Project.id,
+                CorrespondenceProjectLink.created_at,
+                CorrespondenceProjectLink.id,
+            )
+        )
+        return [tuple(row) for row in self.session.execute(statement)]
