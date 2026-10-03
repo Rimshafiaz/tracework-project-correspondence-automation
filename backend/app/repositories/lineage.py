@@ -2,15 +2,17 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.ai_proposal import AIProposal, AIProposalEvidence
 from app.models.audit_event import AuditEvent
+from app.models.correspondence_project_link import CorrespondenceProjectLink
 from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
 from app.models.evidence_item import EvidenceItem
 from app.models.policy_evaluation import PolicyEvaluation, PolicyEvaluationEvidence
 from app.models.review_item import ReviewItem
+from app.models.review_item import ReviewItemCandidateProject
 from app.models.state_transition import StateTransition, StateTransitionEvidence
 
 
@@ -137,6 +139,60 @@ class LineageRepository:
                 StateTransition.affected_entity_id == affected_entity_id,
             )
         )
+
+    def get_state_transition_by_id(
+        self,
+        state_transition_id: UUID,
+    ) -> StateTransition | None:
+        return self.session.get(StateTransition, state_transition_id)
+
+    def list_audit_events_for_lineage(
+        self,
+        *,
+        ai_proposal_id: UUID,
+        policy_evaluation_id: UUID,
+        state_transition_id: UUID,
+        review_item_id: UUID | None,
+    ) -> Sequence[AuditEvent]:
+        references = [
+            AuditEvent.ai_proposal_id == ai_proposal_id,
+            AuditEvent.policy_evaluation_id == policy_evaluation_id,
+            AuditEvent.state_transition_id == state_transition_id,
+        ]
+        if review_item_id is not None:
+            references.append(AuditEvent.review_item_id == review_item_id)
+        return self.session.scalars(
+            select(AuditEvent)
+            .where(or_(*references))
+            .order_by(AuditEvent.occurred_at, AuditEvent.id)
+        ).all()
+
+    def list_project_activity_audit_events(
+        self,
+        project_id: UUID,
+    ) -> Sequence[AuditEvent]:
+        linked_correspondence_ids = select(
+            CorrespondenceProjectLink.correspondence_event_id
+        ).where(CorrespondenceProjectLink.project_id == project_id)
+        candidate_review_ids = select(
+            ReviewItemCandidateProject.review_item_id
+        ).where(ReviewItemCandidateProject.project_id == project_id)
+        return self.session.scalars(
+            select(AuditEvent)
+            .where(
+                or_(
+                    AuditEvent.project_id == project_id,
+                    and_(
+                        AuditEvent.project_id.is_(None),
+                        AuditEvent.correspondence_event_id.in_(
+                            linked_correspondence_ids
+                        ),
+                    ),
+                    AuditEvent.review_item_id.in_(candidate_review_ids),
+                )
+            )
+            .order_by(AuditEvent.occurred_at, AuditEvent.id)
+        ).all()
 
     def get_state_transition_for_update(
         self,

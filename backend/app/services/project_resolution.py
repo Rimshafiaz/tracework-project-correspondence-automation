@@ -293,12 +293,29 @@ class ProjectResolutionService:
             raise ProjectResolutionValidationError(
                 "evidence source text is not available"
             )
-        start_offset = source_text.find(evidence.excerpt)
-        if start_offset < 0:
+        offsets = ProjectResolutionService._all_occurrences(
+            source_text,
+            evidence.excerpt,
+        )
+        if not offsets:
             raise ProjectResolutionValidationError(
                 "evidence excerpt does not occur in the persisted source text"
             )
+        if len(offsets) != 1:
+            raise ProjectResolutionValidationError(
+                "evidence excerpt occurs more than once and is ambiguous"
+            )
+        start_offset = offsets[0]
         return start_offset, start_offset + len(evidence.excerpt), attachment
+
+    @staticmethod
+    def _all_occurrences(source_text: str, excerpt: str) -> tuple[int, ...]:
+        offsets = []
+        start = 0
+        while (offset := source_text.find(excerpt, start)) >= 0:
+            offsets.append(offset)
+            start = offset + 1
+        return tuple(offsets)
 
     @staticmethod
     def _existing_extraction_provenance(

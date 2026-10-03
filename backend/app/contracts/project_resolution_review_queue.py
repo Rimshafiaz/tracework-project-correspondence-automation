@@ -179,6 +179,47 @@ class ProjectResolutionReviewPreview(BaseModel):
         return self
 
 
+class ProjectLinkAuthorizationPreview(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    correspondence_event_id: UUID
+    current_project_ids: tuple[UUID, ...] = ()
+    authorized_project_ids: tuple[UUID, ...] = Field(min_length=1)
+    added_project_ids: tuple[UUID, ...] = Field(min_length=1)
+    result_project_ids: tuple[UUID, ...] = Field(min_length=1)
+    evidence_ids: tuple[UUID, ...] = ()
+    policy: PolicyEvaluationSnapshot
+    disposition: TransitionDisposition = TransitionDisposition.AUTO_APPLY
+
+    @field_validator(
+        "current_project_ids",
+        "authorized_project_ids",
+        "added_project_ids",
+        "result_project_ids",
+        "evidence_ids",
+    )
+    @classmethod
+    def require_unique_authorization_ids(cls, value: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("project-link authorization IDs must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def require_actual_additions(self) -> "ProjectLinkAuthorizationPreview":
+        current = set(self.current_project_ids)
+        authorized = set(self.authorized_project_ids)
+        added = set(self.added_project_ids)
+        if self.policy.decision is not PolicyDecision.ALLOW_AUTO_ACTION:
+            raise ValueError("automatic project links require an allow policy decision")
+        if self.disposition is not TransitionDisposition.AUTO_APPLY:
+            raise ValueError("automatic project links require AUTO_APPLY")
+        if added != authorized - current:
+            raise ValueError("added projects must be authorized projects not already linked")
+        if set(self.result_project_ids) != current | added:
+            raise ValueError("result projects must preserve current links and add new links")
+        return self
+
+
 class ProjectResolutionReviewCorrespondence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

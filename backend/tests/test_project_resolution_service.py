@@ -314,7 +314,7 @@ def test_genuine_multiple_project_correspondence_is_representable() -> None:
     assert result.resolution.status is ResolutionStatus.MULTI_PROJECT
 
 
-def test_unknown_project_or_invented_excerpt_is_rejected_before_persistence() -> None:
+def test_unknown_project_is_rejected_before_persistence() -> None:
     candidate = _candidate("ALPHA")
     context = _context("The message names ALPHA.", candidate)
     unknown_id = uuid4()
@@ -334,6 +334,35 @@ def test_unknown_project_or_invented_excerpt_is_rejected_before_persistence() ->
     with pytest.raises(ProjectResolutionValidationError, match="outside"):
         asyncio.run(_service(unknown_resolution, repository).resolve(context))
     assert repository.proposals == []
+
+
+def test_repeated_excerpt_without_unique_provenance_is_rejected() -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("ALPHA appears once, then ALPHA appears again.", candidate)
+    resolution = ProjectResolution(
+        status=ResolutionStatus.MATCHED,
+        project_ids=(candidate.project_id,),
+        evidence=(
+            ResolutionEvidence(
+                project_id=candidate.project_id,
+                source_evidence=(_body_evidence(context, "ALPHA"),),
+                interpretation="The repeated excerpt is not uniquely located.",
+            ),
+        ),
+    )
+    repository = FakeLineageRepository()
+
+    with pytest.raises(ProjectResolutionValidationError, match="more than once"):
+        asyncio.run(_service(resolution, repository).resolve(context))
+
+    assert repository.evidence == []
+    assert repository.proposals == []
+
+
+def test_invented_excerpt_is_rejected_before_persistence() -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    repository = FakeLineageRepository()
 
     invalid_excerpt_resolution = ProjectResolution(
         status=ResolutionStatus.MATCHED,

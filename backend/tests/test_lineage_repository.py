@@ -162,6 +162,46 @@ def test_get_state_transition_uses_policy_and_bundle_identity() -> None:
     assert len(statement._where_criteria) == 3
 
 
+def test_get_state_transition_by_id_uses_primary_key_lookup() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    transition_id = uuid4()
+    stored_transition = object()
+    session.get.return_value = stored_transition
+
+    result = repository.get_state_transition_by_id(transition_id)
+
+    assert result is stored_transition
+
+
+def test_list_audit_events_for_lineage_uses_existing_references() -> None:
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+    repository = LineageRepository(session)
+
+    repository.list_audit_events_for_lineage(
+        ai_proposal_id=uuid4(),
+        policy_evaluation_id=uuid4(),
+        state_transition_id=uuid4(),
+        review_item_id=uuid4(),
+    )
+
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
+
+
+def test_list_project_activity_uses_project_history_sources() -> None:
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+
+    LineageRepository(session).list_project_activity_audit_events(uuid4())
+
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
+
+
 def test_list_valid_requirement_evidence_is_project_scoped() -> None:
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = []

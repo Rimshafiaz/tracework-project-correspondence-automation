@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,7 @@ from app.contracts.project_resolution_review import ProjectResolutionReviewHando
 from app.contracts.transition_preview import PolicyEvaluationSnapshot
 from app.models.enums import PolicyDecision, ProjectStatus, TransitionDisposition
 from app.services.project_resolution_review_preview import (
+    build_project_link_authorization_preview,
     build_project_resolution_review_preview,
 )
 
@@ -153,3 +155,47 @@ def test_preview_rejects_non_review_policy() -> None:
 
     with pytest.raises(ValidationError, match="review-required"):
         build_project_resolution_review_preview(handoff=handoff)
+
+
+def test_auto_preview_separates_existing_links_from_actual_additions() -> None:
+    existing = uuid4()
+    added = uuid4()
+    evaluation = SimpleNamespace(
+        id=uuid4(),
+        policy_version="project-identity/1",
+        decision=PolicyDecision.ALLOW_AUTO_ACTION,
+        triggered_rule_ids=["PID-302-AUTO-ELIGIBLE"],
+        reasons=["Objective identity signals permit automatic linking."],
+    )
+
+    preview = build_project_link_authorization_preview(
+        correspondence_event_id=uuid4(),
+        current_project_ids=(existing,),
+        authorized_project_ids=(existing, added),
+        evidence_ids=(uuid4(),),
+        evaluation=evaluation,
+    )
+
+    assert preview.current_project_ids == (existing,)
+    assert preview.authorized_project_ids == (existing, added)
+    assert preview.added_project_ids == (added,)
+    assert preview.result_project_ids == (existing, added)
+
+
+def test_auto_preview_returns_none_when_every_authorized_link_exists() -> None:
+    existing = uuid4()
+    evaluation = SimpleNamespace(
+        id=uuid4(),
+        policy_version="project-identity/1",
+        decision=PolicyDecision.ALLOW_AUTO_ACTION,
+        triggered_rule_ids=["PID-302-AUTO-ELIGIBLE"],
+        reasons=["Objective identity signals permit automatic linking."],
+    )
+
+    assert build_project_link_authorization_preview(
+        correspondence_event_id=uuid4(),
+        current_project_ids=(existing,),
+        authorized_project_ids=(existing,),
+        evidence_ids=(),
+        evaluation=evaluation,
+    ) is None

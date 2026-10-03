@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.ai.schemas import CandidateSignalReference, ProjectResolution, ResolutionConcern, ResolutionEvidence, ResolutionStatus
 from app.contracts.project_candidate import CandidateSignalSource, CandidateSignalType, ProjectCandidate, ProjectCandidateSet, ProjectCandidateSignal, serialize_project_candidate_snapshot
-from app.models.enums import EvidenceValidity, PolicyDecision, ProjectStatus, ProposalType
+from app.models.enums import EvidenceValidity, PolicyDecision, ProjectStatus, ProposalType, TransitionStatus
 from app.services.policy import ProjectIdentityAuthorizationService
+from app.services.policy.project_identity_authorization import AUTO_LINKED_AUDIT_EVENT
 
 
 class FakeLineageRepository:
@@ -17,6 +18,7 @@ class FakeLineageRepository:
         self.evidence = tuple(evidence)
         self.evaluations = {}
         self.audits = []
+        self.transitions = []
 
     def get_proposal_for_update(self, proposal_id):
         return self.proposal if self.proposal.id == proposal_id else None
@@ -34,6 +36,36 @@ class FakeLineageRepository:
 
     def list_evidence_by_ids(self, evidence_ids):
         return [item for item in self.evidence if item.id in evidence_ids]
+
+    def list_policy_evidence(self, _evaluation_id):
+        return []
+
+    def get_state_transition_for_update(self, **values):
+        return next(
+            (
+                item
+                for item in self.transitions
+                if item.policy_evaluation_id == values["policy_evaluation_id"]
+                and item.affected_entity_type == values["affected_entity_type"]
+                and item.affected_entity_id == values["affected_entity_id"]
+            ),
+            None,
+        )
+
+    def create_transition(self, **values):
+        transition = SimpleNamespace(
+            id=uuid4(),
+            status=TransitionStatus.PREVIEWED,
+            applied_at=None,
+            **values,
+        )
+        self.transitions.append(transition)
+        return transition
+
+    def mark_transition_applied(self, transition, *, applied_at):
+        transition.status = TransitionStatus.APPLIED
+        transition.applied_at = applied_at
+        return transition
 
     def get_audit_event(self, *, event_type, policy_evaluation_id, project_id=None):
         return next(
@@ -81,6 +113,16 @@ class FakeProjectLinkRepository(FakeRecordRepository):
         )
         self.approved[key] = link
         return link, True
+
+    def get_approved_link(self, *, correspondence_event_id, project_id):
+        return self.approved.get((correspondence_event_id, project_id))
+
+    def list_approved_project_ids_for_event(self, correspondence_event_id):
+        return [
+            project_id
+            for event_id, project_id in self.approved
+            if event_id == correspondence_event_id
+        ]
 
 
 def _signal(
@@ -211,6 +253,8 @@ def test_allowed_single_project_is_linked_and_committed_once() -> None:
     assert len(result.created_project_link_ids) == 1
     assert len(lineage.evaluations) == 1
     assert len(lineage.audits) == 2
+    assert len(lineage.transitions) == 1
+    assert lineage.transitions[0].status is TransitionStatus.APPLIED
     assert len(links.approved) == 1
     session.commit.assert_called_once_with()
     session.rollback.assert_not_called()
@@ -234,6 +278,7 @@ def test_allowed_multi_project_links_are_created_together() -> None:
     assert len(result.project_links) == 2
     assert len(result.created_project_link_ids) == 2
     assert len(lineage.audits) == 3
+    assert len(lineage.transitions) == 1
     assert len(links.approved) == 2
     session.commit.assert_called_once_with()
 
@@ -340,6 +385,7 @@ def test_retry_reuses_evaluation_links_and_audits() -> None:
     assert len(lineage.evaluations) == 1
     assert len(links.approved) == 1
     assert len(lineage.audits) == 2
+    assert len(lineage.transitions) == 1
     assert session.commit.call_count == 2
     session.rollback.assert_not_called()
 
@@ -365,3 +411,72 @@ def test_link_failure_rolls_back_without_commit() -> None:
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once_with()
+
+
+def test_existing_links_are_preserved_but_only_missing_links_are_recorded_as_added() -> None:
+    first, first_contact = _strong_candidate("CODE-1")
+    second, second_contact = _strong_candidate("CODE-2")
+    proposal = _proposal(
+        (first, second),
+        _resolution(ResolutionStatus.MULTI_PROJECT, first, second),
+    )
+    links = FakeProjectLinkRepository()
+    existing, _ = links.get_or_create_approved_link(
+        correspondence_event_id=proposal.correspondence_event_id,
+        project_id=first.project_id,
+    )
+    service, _, lineage, _ = _service(
+        proposal,
+        contacts=(first_contact, second_contact),
+        link_repository=links,
+    )
+
+    result = service.authorize(proposal.id)
+
+    assert len(result.project_links) == 2
+    assert result.project_links[0] is existing
+    assert len(result.created_project_link_ids) == 1
+    transition = lineage.transitions[0]
+    assert transition.current_state["project_ids"] == [str(first.project_id)]
+    assert transition.proposed_state["authorized_project_ids"] == [
+        str(first.project_id),
+        str(second.project_id),
+    ]
+    assert transition.proposed_state["added_project_ids"] == [str(second.project_id)]
+    assert set(transition.proposed_state["project_ids"]) == {
+        str(first.project_id),
+        str(second.project_id),
+    }
+    created_audits = [
+        item for item in lineage.audits if item.event_type == AUTO_LINKED_AUDIT_EVENT
+    ]
+    assert [item.project_id for item in created_audits] == [second.project_id]
+    assert created_audits[0].state_transition_id == transition.id
+
+
+def test_all_authorized_links_already_exist_is_a_true_noop() -> None:
+    candidate, contact = _strong_candidate("CODE-1")
+    proposal = _proposal(
+        (candidate,),
+        _resolution(ResolutionStatus.MATCHED, candidate),
+    )
+    links = FakeProjectLinkRepository()
+    existing, _ = links.get_or_create_approved_link(
+        correspondence_event_id=proposal.correspondence_event_id,
+        project_id=candidate.project_id,
+    )
+    service, _, lineage, _ = _service(
+        proposal,
+        contacts=(contact,),
+        link_repository=links,
+    )
+
+    result = service.authorize(proposal.id)
+
+    assert result.project_links == (existing,)
+    assert result.created_project_link_ids == ()
+    assert result.transition is None
+    assert lineage.transitions == []
+    assert [item.event_type for item in lineage.audits] == [
+        "project_identity_policy_evaluated"
+    ]
