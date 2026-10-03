@@ -47,6 +47,24 @@ class LineageRepository:
             .order_by(EvidenceItem.created_at, EvidenceItem.id)
         ).all()
 
+    def list_valid_evidence_for_requirements(
+        self,
+        *,
+        project_id: UUID,
+        requirement_ids: set[UUID],
+    ) -> Sequence[EvidenceItem]:
+        if not requirement_ids:
+            return []
+        return self.session.scalars(
+            select(EvidenceItem)
+            .where(
+                EvidenceItem.project_id == project_id,
+                EvidenceItem.requirement_id.in_(requirement_ids),
+                EvidenceItem.validity == EvidenceValidity.VALID,
+            )
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+        ).all()
+
     def get_policy_evaluation(
         self,
         *,

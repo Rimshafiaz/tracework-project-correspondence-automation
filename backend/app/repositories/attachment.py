@@ -1,5 +1,7 @@
+from collections.abc import Sequence
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.attachment_extraction import AttachmentExtractionMetadata, AttachmentExtractionResult
@@ -39,6 +41,16 @@ class AttachmentRepository:
         self.session.add(attachment)
         self.session.flush()
         return attachment
+
+    def list_for_correspondence_event(
+        self,
+        correspondence_event_id: UUID,
+    ) -> Sequence[Attachment]:
+        return self.session.scalars(
+            select(Attachment)
+            .where(Attachment.correspondence_event_id == correspondence_event_id)
+            .order_by(Attachment.created_at, Attachment.id)
+        ).all()
 
     def set_content_hash(
         self,

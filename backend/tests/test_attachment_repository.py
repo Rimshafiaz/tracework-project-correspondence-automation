@@ -45,6 +45,17 @@ def test_create_adds_pending_attachment_without_committing() -> None:
     session.commit.assert_not_called()
 
 
+def test_list_for_correspondence_event_is_scoped_and_ordered() -> None:
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+
+    AttachmentRepository(session).list_for_correspondence_event(uuid4())
+
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
+
+
 def test_set_content_hash_is_idempotent_and_does_not_commit() -> None:
     session = MagicMock(spec=Session)
     repository = AttachmentRepository(session)

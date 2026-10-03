@@ -25,7 +25,7 @@ def test_project_resolver_agent_uses_configured_google_model_and_no_tools() -> N
 
 
 def test_project_resolver_agent_requires_api_key_only_when_built() -> None:
-    settings = Settings(database_url=DATABASE_URL)
+    settings = Settings(database_url=DATABASE_URL, google_api_key=None)
 
     with pytest.raises(ValueError, match="GOOGLE_API_KEY"):
         build_project_resolver_agent(settings)

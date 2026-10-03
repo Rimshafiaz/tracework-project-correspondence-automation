@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     docx_max_table_cells: int = Field(default=50_000, gt=0)
     google_api_key: SecretStr | None = None
     project_resolver_model: str = "gemini-3.7-flash"
+    requirement_reconciler_model: str = "gemini-3.7-flash"
+    requirement_reconciler_max_requirements: int = Field(default=100, gt=0)
+    requirement_reconciler_max_attachments: int = Field(default=20, gt=0)
+    requirement_reconciler_max_source_characters: int = Field(
+        default=200_000,
+        gt=0,
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -52,12 +59,12 @@ class Settings(BaseSettings):
             raise ValueError("GMAIL_INITIAL_AFTER_EPOCH_SECONDS must be nonnegative")
         return self
 
-    @field_validator("project_resolver_model")
+    @field_validator("project_resolver_model", "requirement_reconciler_model")
     @classmethod
-    def reject_blank_project_resolver_model(cls, value: str) -> str:
+    def reject_blank_ai_model(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("PROJECT_RESOLVER_MODEL must not be blank")
+            raise ValueError("AI model name must not be blank")
         return value
 
 
