@@ -117,6 +117,49 @@ def test_preview_requires_unique_evidence() -> None:
         )
 
 
+def test_review_preview_may_have_no_evidence_but_automatic_effect_may_not() -> None:
+    entity_id = uuid4()
+    state = TransitionState(
+        entity_type="requirement_reconciliation",
+        entity_id=entity_id,
+        values={"requirements": []},
+    )
+    review_policy = PolicyEvaluationSnapshot(
+        id=uuid4(),
+        policy_version="requirement-policy/1",
+        decision=PolicyDecision.REVIEW_REQUIRED,
+        triggered_rule_ids=("RID-404-M11-CONCERN",),
+        reasons=("M11 reported an unresolved concern.",),
+    )
+
+    preview = build_state_transition_preview(
+        current_state=state,
+        proposed_state=state,
+        evidence_ids=(),
+        policy=review_policy,
+    )
+
+    assert preview.evidence_ids == ()
+
+    automatic_policy = review_policy.model_copy(
+        update={"decision": PolicyDecision.ALLOW_AUTO_ACTION}
+    )
+    with pytest.raises(ValidationError, match="automatic requirement effects"):
+        build_state_transition_preview(
+            current_state=state,
+            proposed_state=state,
+            evidence_ids=(),
+            policy=automatic_policy,
+            requirement_effects=[
+                RequirementEffect(
+                    requirement_id=uuid4(),
+                    current_state=RequirementState.OPEN,
+                    proposed_state=RequirementState.PARTIAL,
+                )
+            ],
+        )
+
+
 def test_preview_rejects_mismatched_entities() -> None:
     policy = PolicyEvaluationSnapshot(
         id=uuid4(),

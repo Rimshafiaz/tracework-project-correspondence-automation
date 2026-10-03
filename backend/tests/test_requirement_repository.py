@@ -38,6 +38,39 @@ def test_get_and_list_use_scoped_queries() -> None:
     assert len(statement._where_criteria) == 1
 
 
+def test_locking_reads_use_for_update() -> None:
+    session = MagicMock(spec=Session)
+    repository = RequirementRepository(session)
+    session.scalar.return_value = None
+    session.scalars.return_value.all.return_value = []
+
+    repository.get_for_update(uuid4())
+    repository.list_for_project_for_update(uuid4())
+
+    assert session.scalar.call_args.args[0]._for_update_arg is not None
+    assert session.scalars.call_args.args[0]._for_update_arg is not None
+
+
+def test_apply_authorized_change_updates_state_without_commit() -> None:
+    session = MagicMock(spec=Session)
+    repository = RequirementRepository(session)
+    requirement = Requirement(
+        project_id=uuid4(),
+        name="Neutral requirement",
+        state=RequirementState.OPEN,
+    )
+
+    repository.apply_authorized_change(
+        requirement,
+        state=RequirementState.PARTIAL,
+        expected_date=None,
+    )
+
+    assert requirement.state is RequirementState.PARTIAL
+    session.flush.assert_called_once_with()
+    session.commit.assert_not_called()
+
+
 def test_update_details_does_not_change_state_or_commit() -> None:
     session = MagicMock(spec=Session)
     repository = RequirementRepository(session)

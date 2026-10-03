@@ -97,6 +97,33 @@ class ReviewItemRepository:
         self.session.flush()
         return review
 
+    def create_requirement_review(
+        self,
+        *,
+        correspondence_event_id: UUID,
+        state_transition_id: UUID,
+        review_type: ReviewType,
+        review_reason: str,
+    ) -> ReviewItem:
+        if review_type not in {
+            ReviewType.REQUIREMENT_CHANGE,
+            ReviewType.NEW_REQUIREMENT,
+        }:
+            raise ValueError("requirement review type is invalid")
+        review_reason = review_reason.strip()
+        if not review_reason:
+            raise ValueError("review_reason must not be blank")
+        review = ReviewItem(
+            correspondence_event_id=correspondence_event_id,
+            state_transition_id=state_transition_id,
+            review_type=review_type,
+            review_reason=review_reason,
+            status=ReviewStatus.PENDING,
+        )
+        self.session.add(review)
+        self.session.flush()
+        return review
+
     def list_candidate_project_ids(self, review_item_id: UUID) -> Sequence[UUID]:
         return self.session.scalars(
             select(ReviewItemCandidateProject.project_id)

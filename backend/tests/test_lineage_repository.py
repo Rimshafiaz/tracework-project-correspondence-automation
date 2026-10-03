@@ -145,6 +145,23 @@ def test_list_state_transition_evidence_scopes_and_orders_query() -> None:
     assert len(statement._order_by_clauses) == 2
 
 
+def test_get_state_transition_uses_policy_and_bundle_identity() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    expected = object()
+    session.scalar.return_value = expected
+
+    result = repository.get_state_transition(
+        policy_evaluation_id=uuid4(),
+        affected_entity_type="requirement_reconciliation",
+        affected_entity_id=uuid4(),
+    )
+
+    assert result is expected
+    statement = session.scalar.call_args.args[0]
+    assert len(statement._where_criteria) == 3
+
+
 def test_list_valid_requirement_evidence_is_project_scoped() -> None:
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = []

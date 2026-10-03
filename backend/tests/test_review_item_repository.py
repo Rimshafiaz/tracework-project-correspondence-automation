@@ -88,6 +88,29 @@ def test_create_review_preserves_candidate_references_without_committing() -> No
 
 
 @pytest.mark.parametrize(
+    "review_type",
+    [ReviewType.REQUIREMENT_CHANGE, ReviewType.NEW_REQUIREMENT],
+)
+def test_create_requirement_review_reuses_existing_queue_schema(review_type) -> None:
+    session = MagicMock(spec=Session)
+    repository = ReviewItemRepository(session)
+
+    review = repository.create_requirement_review(
+        correspondence_event_id=uuid4(),
+        state_transition_id=uuid4(),
+        review_type=review_type,
+        review_reason="Requirement policy requires review.",
+    )
+
+    assert review.review_type is review_type
+    assert review.status is ReviewStatus.PENDING
+    assert review.candidate_project_links == []
+    session.add.assert_called_once_with(review)
+    session.flush.assert_called_once_with()
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
     ("method_name", "expected_status", "payload"),
     [
         ("mark_approved", ReviewStatus.APPROVED, None),

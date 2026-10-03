@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -121,6 +122,58 @@ class LineageRepository:
             )
             .order_by(EvidenceItem.created_at, EvidenceItem.id)
         ).all()
+
+    def get_state_transition(
+        self,
+        *,
+        policy_evaluation_id: UUID,
+        affected_entity_type: str,
+        affected_entity_id: UUID,
+    ) -> StateTransition | None:
+        return self.session.scalar(
+            select(StateTransition).where(
+                StateTransition.policy_evaluation_id == policy_evaluation_id,
+                StateTransition.affected_entity_type == affected_entity_type,
+                StateTransition.affected_entity_id == affected_entity_id,
+            )
+        )
+
+    def get_state_transition_for_update(
+        self,
+        *,
+        policy_evaluation_id: UUID,
+        affected_entity_type: str,
+        affected_entity_id: UUID,
+    ) -> StateTransition | None:
+        return self.session.scalar(
+            select(StateTransition)
+            .where(
+                StateTransition.policy_evaluation_id == policy_evaluation_id,
+                StateTransition.affected_entity_type == affected_entity_type,
+                StateTransition.affected_entity_id == affected_entity_id,
+            )
+            .with_for_update()
+        )
+
+    def mark_transition_applied(
+        self,
+        transition: StateTransition,
+        *,
+        applied_at: datetime,
+    ) -> StateTransition:
+        transition.status = TransitionStatus.APPLIED
+        transition.applied_at = applied_at
+        self.session.flush()
+        return transition
+
+    def mark_transition_rejected(
+        self,
+        transition: StateTransition,
+    ) -> StateTransition:
+        transition.status = TransitionStatus.REJECTED
+        transition.applied_at = None
+        self.session.flush()
+        return transition
 
     def create_evidence(
         self,

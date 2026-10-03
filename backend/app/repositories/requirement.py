@@ -35,6 +35,13 @@ class RequirementRepository:
     def get(self, requirement_id: UUID) -> Requirement | None:
         return self.session.get(Requirement, requirement_id)
 
+    def get_for_update(self, requirement_id: UUID) -> Requirement | None:
+        return self.session.scalar(
+            select(Requirement)
+            .where(Requirement.id == requirement_id)
+            .with_for_update()
+        )
+
     def list_for_project(self, project_id: UUID) -> Sequence[Requirement]:
         statement = (
             select(Requirement)
@@ -42,6 +49,30 @@ class RequirementRepository:
             .order_by(Requirement.created_at, Requirement.id)
         )
         return self.session.scalars(statement).all()
+
+    def list_for_project_for_update(
+        self,
+        project_id: UUID,
+    ) -> Sequence[Requirement]:
+        statement = (
+            select(Requirement)
+            .where(Requirement.project_id == project_id)
+            .order_by(Requirement.created_at, Requirement.id)
+            .with_for_update()
+        )
+        return self.session.scalars(statement).all()
+
+    def apply_authorized_change(
+        self,
+        requirement: Requirement,
+        *,
+        state: RequirementState,
+        expected_date: date | None,
+    ) -> Requirement:
+        requirement.state = state
+        requirement.expected_date = expected_date
+        self.session.flush()
+        return requirement
 
     def update_details(
         self,

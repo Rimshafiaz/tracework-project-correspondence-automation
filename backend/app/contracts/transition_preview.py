@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from app.models.enums import PolicyDecision, RequirementState, TransitionDisposition
 
@@ -14,7 +14,7 @@ class TransitionState(BaseModel):
 
 
 class RequirementEffect(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     requirement_id: UUID
     current_state: RequirementState
@@ -36,7 +36,7 @@ class StateTransitionPreview(BaseModel):
 
     current_state: TransitionState
     proposed_state: TransitionState
-    evidence_ids: tuple[UUID, ...] = Field(min_length=1)
+    evidence_ids: tuple[UUID, ...] = ()
     policy: PolicyEvaluationSnapshot
     requirement_effects: tuple[RequirementEffect, ...] = ()
     document_effects: tuple[()] = ()
@@ -49,3 +49,13 @@ class StateTransitionPreview(BaseModel):
         if len(value) != len(set(value)):
             raise ValueError("evidence IDs must be unique")
         return value
+
+    @model_validator(mode="after")
+    def require_evidence_for_automatic_effects(self) -> "StateTransitionPreview":
+        if (
+            self.disposition is TransitionDisposition.AUTO_APPLY
+            and self.requirement_effects
+            and not self.evidence_ids
+        ):
+            raise ValueError("automatic requirement effects require evidence")
+        return self
