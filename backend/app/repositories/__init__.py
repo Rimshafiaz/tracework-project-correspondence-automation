@@ -7,6 +7,7 @@ from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
 from app.repositories.project_identifier import ProjectIdentifierRepository
 from app.repositories.requirement import RequirementRepository
+from app.repositories.review_item import ReviewItemRepository, ReviewItemStateError
 
 __all__ = [
     "AttachmentRepository",
@@ -20,4 +21,6 @@ __all__ = [
     "ProjectContactRepository",
     "ProjectRepository",
     "RequirementRepository",
+    "ReviewItemRepository",
+    "ReviewItemStateError",
 ]

@@ -89,6 +89,19 @@ def test_get_policy_evaluation_by_id_uses_primary_key_lookup() -> None:
     session.get.assert_called_once_with(PolicyEvaluation, evaluation_id)
 
 
+def test_get_policy_evaluation_for_update_locks_the_evaluation_row() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    stored_evaluation = object()
+    session.scalar.return_value = stored_evaluation
+
+    evaluation = repository.get_policy_evaluation_by_id_for_update(uuid4())
+
+    assert evaluation is stored_evaluation
+    statement = session.scalar.call_args.args[0]
+    assert statement._for_update_arg is not None
+
+
 def test_proposal_and_policy_evaluation_link_their_evidence() -> None:
     session = MagicMock(spec=Session)
     repository = LineageRepository(session)
@@ -116,6 +129,20 @@ def test_proposal_and_policy_evaluation_link_their_evidence() -> None:
     assert [link.evidence_item_id for link in evaluation.evidence_links] == evidence_ids
     assert session.flush.call_count == 2
     session.commit.assert_not_called()
+
+
+def test_list_state_transition_evidence_scopes_and_orders_query() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    expected = [object()]
+    session.scalars.return_value.all.return_value = expected
+
+    result = repository.list_state_transition_evidence(uuid4())
+
+    assert result == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 2
 
 
 def test_transition_and_review_start_in_preview_states() -> None:

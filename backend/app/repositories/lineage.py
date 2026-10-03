@@ -66,6 +66,16 @@ class LineageRepository:
     ) -> PolicyEvaluation | None:
         return self.session.get(PolicyEvaluation, policy_evaluation_id)
 
+    def get_policy_evaluation_by_id_for_update(
+        self,
+        policy_evaluation_id: UUID,
+    ) -> PolicyEvaluation | None:
+        return self.session.scalar(
+            select(PolicyEvaluation)
+            .where(PolicyEvaluation.id == policy_evaluation_id)
+            .with_for_update()
+        )
+
     def list_policy_evidence(
         self,
         policy_evaluation_id: UUID,
@@ -76,6 +86,20 @@ class LineageRepository:
             .where(
                 PolicyEvaluationEvidence.policy_evaluation_id
                 == policy_evaluation_id
+            )
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+        ).all()
+
+    def list_state_transition_evidence(
+        self,
+        state_transition_id: UUID,
+    ) -> Sequence[EvidenceItem]:
+        return self.session.scalars(
+            select(EvidenceItem)
+            .join(StateTransitionEvidence)
+            .where(
+                StateTransitionEvidence.state_transition_id
+                == state_transition_id
             )
             .order_by(EvidenceItem.created_at, EvidenceItem.id)
         ).all()

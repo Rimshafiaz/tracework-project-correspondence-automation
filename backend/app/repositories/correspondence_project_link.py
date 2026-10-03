@@ -50,6 +50,19 @@ class CorrespondenceProjectLinkRepository:
             True,
         )
 
+    def list_approved_project_ids_for_event(
+        self,
+        correspondence_event_id: UUID,
+    ) -> Sequence[UUID]:
+        return self.session.scalars(
+            select(CorrespondenceProjectLink.project_id)
+            .where(
+                CorrespondenceProjectLink.correspondence_event_id
+                == correspondence_event_id
+            )
+            .order_by(CorrespondenceProjectLink.project_id)
+        ).all()
+
     def create_approved_link(
         self, *, correspondence_event_id: UUID, project_id: UUID
     ) -> CorrespondenceProjectLink:

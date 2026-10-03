@@ -69,6 +69,20 @@ def test_get_or_create_approved_link_creates_when_missing() -> None:
     session.flush.assert_called_once_with()
 
 
+def test_event_lookup_returns_current_authoritative_project_ids() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    project_id = uuid4()
+    session.scalars.return_value.all.return_value = [project_id]
+
+    result = repository.list_approved_project_ids_for_event(uuid4())
+
+    assert result == [project_id]
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 1
+    assert len(statement._order_by_clauses) == 1
+
+
 def test_conversation_lookup_is_source_scoped_and_distinct() -> None:
     session = MagicMock(spec=Session)
     repository = CorrespondenceProjectLinkRepository(session)
