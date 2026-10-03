@@ -7,7 +7,7 @@ from pydantic_ai import Agent
 
 from app.ai.prompts.project_resolver import PROJECT_RESOLVER_PROMPT_VERSION
 from app.ai.schemas import CandidateSignalReference, ProjectResolution, ProjectResolverInput, ResolutionConcern, ResolutionStatus, ResolverAttachment, ResolverSourceField, SourceTextEvidence
-from app.contracts.project_candidate import ProjectCandidateSignal
+from app.contracts.project_candidate import ProjectCandidateSignal, serialize_project_candidate_snapshot
 from app.models.ai_proposal import AIProposal
 from app.models.enums import ProposalType
 from app.repositories.lineage import LineageRepository
@@ -83,6 +83,7 @@ class ProjectResolutionService:
                     str(attachment.attachment_id)
                     for attachment in context.attachments
                 ],
+                **serialize_project_candidate_snapshot(context.candidates),
             },
             structured_output=resolution.model_dump(mode="json"),
             evidence_item_ids=evidence_item_ids,

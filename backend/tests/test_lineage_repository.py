@@ -4,7 +4,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.ai_proposal import AIProposal
 from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
+from app.models.policy_evaluation import PolicyEvaluation
 from app.repositories.lineage import LineageRepository
 
 
@@ -29,6 +31,62 @@ def test_create_evidence_preserves_exact_source_details() -> None:
     assert evidence.page_number == 3
     assert evidence.validity is EvidenceValidity.VALID
     session.flush.assert_called_once_with()
+
+
+def test_get_proposal_uses_primary_key_lookup() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    proposal_id = uuid4()
+    stored_proposal = object()
+    session.get.return_value = stored_proposal
+
+    proposal = repository.get_proposal(proposal_id)
+
+    assert proposal is stored_proposal
+    session.get.assert_called_once_with(AIProposal, proposal_id)
+
+
+def test_get_proposal_for_update_locks_the_proposal_row() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    stored_proposal = object()
+    session.scalar.return_value = stored_proposal
+
+    proposal = repository.get_proposal_for_update(uuid4())
+
+    assert proposal is stored_proposal
+    statement = session.scalar.call_args.args[0]
+    assert statement._for_update_arg is not None
+
+
+def test_get_policy_evaluation_uses_proposal_and_version() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    stored_evaluation = object()
+    session.scalar.return_value = stored_evaluation
+
+    evaluation = repository.get_policy_evaluation(
+        ai_proposal_id=uuid4(),
+        policy_version="project-identity/1",
+    )
+
+    assert evaluation is stored_evaluation
+    statement = session.scalar.call_args.args[0]
+    assert "policy_evaluations.ai_proposal_id" in str(statement)
+    assert "policy_evaluations.policy_version" in str(statement)
+
+
+def test_get_policy_evaluation_by_id_uses_primary_key_lookup() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    evaluation_id = uuid4()
+    stored_evaluation = object()
+    session.get.return_value = stored_evaluation
+
+    evaluation = repository.get_policy_evaluation_by_id(evaluation_id)
+
+    assert evaluation is stored_evaluation
+    session.get.assert_called_once_with(PolicyEvaluation, evaluation_id)
 
 
 def test_proposal_and_policy_evaluation_link_their_evidence() -> None:
@@ -57,6 +115,7 @@ def test_proposal_and_policy_evaluation_link_their_evidence() -> None:
     assert [link.evidence_item_id for link in proposal.evidence_links] == evidence_ids
     assert [link.evidence_item_id for link in evaluation.evidence_links] == evidence_ids
     assert session.flush.call_count == 2
+    session.commit.assert_not_called()
 
 
 def test_transition_and_review_start_in_preview_states() -> None:

@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +11,9 @@ from app.models.project_contact import ProjectContact
 class ProjectContactRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def get(self, contact_id: UUID) -> ProjectContact | None:
+        return self.session.get(ProjectContact, contact_id)
 
     def find_active_with_projects(
         self,

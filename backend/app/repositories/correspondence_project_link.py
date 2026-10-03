@@ -13,6 +13,43 @@ class CorrespondenceProjectLinkRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def get(self, link_id: UUID) -> CorrespondenceProjectLink | None:
+        return self.session.get(CorrespondenceProjectLink, link_id)
+
+    def get_approved_link(
+        self,
+        *,
+        correspondence_event_id: UUID,
+        project_id: UUID,
+    ) -> CorrespondenceProjectLink | None:
+        return self.session.scalar(
+            select(CorrespondenceProjectLink).where(
+                CorrespondenceProjectLink.correspondence_event_id
+                == correspondence_event_id,
+                CorrespondenceProjectLink.project_id == project_id,
+            )
+        )
+
+    def get_or_create_approved_link(
+        self,
+        *,
+        correspondence_event_id: UUID,
+        project_id: UUID,
+    ) -> tuple[CorrespondenceProjectLink, bool]:
+        existing = self.get_approved_link(
+            correspondence_event_id=correspondence_event_id,
+            project_id=project_id,
+        )
+        if existing is not None:
+            return existing, False
+        return (
+            self.create_approved_link(
+                correspondence_event_id=correspondence_event_id,
+                project_id=project_id,
+            ),
+            True,
+        )
+
     def create_approved_link(
         self, *, correspondence_event_id: UUID, project_id: UUID
     ) -> CorrespondenceProjectLink:

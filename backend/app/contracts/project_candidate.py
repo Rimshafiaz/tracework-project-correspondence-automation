@@ -1,9 +1,17 @@
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field, field_validator, model_validator
 
 from app.models.enums import ProjectStatus
+
+PROJECT_CANDIDATE_SNAPSHOT_SCHEMA_VERSION = 1
+PROJECT_CANDIDATE_SNAPSHOT_KEY = "project_candidate_set"
+PROJECT_CANDIDATE_SNAPSHOT_VERSION_KEY = "project_candidate_snapshot_schema_version"
+
+
+class ProjectCandidateSnapshotError(ValueError):
+    pass
 
 
 class CandidateSignalSource(StrEnum):
@@ -208,3 +216,43 @@ class ProjectCandidateSet(BaseModel):
     @property
     def is_ambiguous(self) -> bool:
         return len(self.candidates) > 1
+
+
+def serialize_project_candidate_snapshot(
+    candidate_set: ProjectCandidateSet,
+) -> dict[str, object]:
+    return {
+        PROJECT_CANDIDATE_SNAPSHOT_VERSION_KEY: (
+            PROJECT_CANDIDATE_SNAPSHOT_SCHEMA_VERSION
+        ),
+        PROJECT_CANDIDATE_SNAPSHOT_KEY: candidate_set.model_dump(
+            mode="json",
+            exclude_computed_fields=True,
+        ),
+    }
+
+
+def reconstruct_project_candidate_snapshot(
+    input_metadata: dict[str, object] | None,
+) -> ProjectCandidateSet:
+    if input_metadata is None:
+        raise ProjectCandidateSnapshotError("project candidate snapshot is missing")
+
+    version = input_metadata.get(PROJECT_CANDIDATE_SNAPSHOT_VERSION_KEY)
+    if version != PROJECT_CANDIDATE_SNAPSHOT_SCHEMA_VERSION:
+        raise ProjectCandidateSnapshotError(
+            "project candidate snapshot schema version is missing or unsupported"
+        )
+
+    payload = input_metadata.get(PROJECT_CANDIDATE_SNAPSHOT_KEY)
+    if not isinstance(payload, dict):
+        raise ProjectCandidateSnapshotError(
+            "project candidate snapshot payload is missing or malformed"
+        )
+
+    try:
+        return ProjectCandidateSet.model_validate(payload)
+    except ValidationError as exc:
+        raise ProjectCandidateSnapshotError(
+            "project candidate snapshot payload is invalid"
+        ) from exc

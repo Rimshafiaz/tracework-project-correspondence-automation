@@ -8,6 +8,17 @@ from app.models.project import Project
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 
 
+def test_get_link_uses_primary_key_lookup() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    link_id = uuid4()
+    link = MagicMock(spec=CorrespondenceProjectLink)
+    session.get.return_value = link
+
+    assert repository.get(link_id) is link
+    session.get.assert_called_once_with(CorrespondenceProjectLink, link_id)
+
+
 def test_create_approved_link_flushes_without_committing() -> None:
     session = MagicMock(spec=Session)
     repository = CorrespondenceProjectLinkRepository(session)
@@ -24,6 +35,38 @@ def test_create_approved_link_flushes_without_committing() -> None:
     session.add.assert_called_once_with(link)
     session.flush.assert_called_once_with()
     session.commit.assert_not_called()
+
+
+def test_get_or_create_approved_link_reuses_existing_link() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    existing = MagicMock(spec=CorrespondenceProjectLink)
+    session.scalar.return_value = existing
+
+    link, created = repository.get_or_create_approved_link(
+        correspondence_event_id=uuid4(),
+        project_id=uuid4(),
+    )
+
+    assert link is existing
+    assert created is False
+    session.add.assert_not_called()
+    session.flush.assert_not_called()
+
+
+def test_get_or_create_approved_link_creates_when_missing() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceProjectLinkRepository(session)
+    session.scalar.return_value = None
+
+    link, created = repository.get_or_create_approved_link(
+        correspondence_event_id=uuid4(),
+        project_id=uuid4(),
+    )
+
+    assert created is True
+    session.add.assert_called_once_with(link)
+    session.flush.assert_called_once_with()
 
 
 def test_conversation_lookup_is_source_scoped_and_distinct() -> None:

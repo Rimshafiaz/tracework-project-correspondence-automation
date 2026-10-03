@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.ai_proposal import AIProposal, AIProposalEvidence
@@ -15,6 +16,69 @@ from app.models.state_transition import StateTransition, StateTransitionEvidence
 class LineageRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def get_proposal(self, proposal_id: UUID) -> AIProposal | None:
+        return self.session.get(AIProposal, proposal_id)
+
+    def get_proposal_for_update(self, proposal_id: UUID) -> AIProposal | None:
+        return self.session.scalar(
+            select(AIProposal)
+            .where(AIProposal.id == proposal_id)
+            .with_for_update()
+        )
+
+    def list_proposal_evidence(self, proposal_id: UUID) -> Sequence[EvidenceItem]:
+        return self.session.scalars(
+            select(EvidenceItem)
+            .join(AIProposalEvidence)
+            .where(AIProposalEvidence.ai_proposal_id == proposal_id)
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+        ).all()
+
+    def list_evidence_by_ids(
+        self,
+        evidence_ids: set[UUID],
+    ) -> Sequence[EvidenceItem]:
+        if not evidence_ids:
+            return []
+        return self.session.scalars(
+            select(EvidenceItem)
+            .where(EvidenceItem.id.in_(evidence_ids))
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+        ).all()
+
+    def get_policy_evaluation(
+        self,
+        *,
+        ai_proposal_id: UUID,
+        policy_version: str,
+    ) -> PolicyEvaluation | None:
+        return self.session.scalar(
+            select(PolicyEvaluation).where(
+                PolicyEvaluation.ai_proposal_id == ai_proposal_id,
+                PolicyEvaluation.policy_version == policy_version,
+            )
+        )
+
+    def get_policy_evaluation_by_id(
+        self,
+        policy_evaluation_id: UUID,
+    ) -> PolicyEvaluation | None:
+        return self.session.get(PolicyEvaluation, policy_evaluation_id)
+
+    def list_policy_evidence(
+        self,
+        policy_evaluation_id: UUID,
+    ) -> Sequence[EvidenceItem]:
+        return self.session.scalars(
+            select(EvidenceItem)
+            .join(PolicyEvaluationEvidence)
+            .where(
+                PolicyEvaluationEvidence.policy_evaluation_id
+                == policy_evaluation_id
+            )
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+        ).all()
 
     def create_evidence(
         self,
@@ -198,3 +262,21 @@ class LineageRepository:
         self.session.add(audit_event)
         self.session.flush()
         return audit_event
+
+    def get_audit_event(
+        self,
+        *,
+        event_type: str,
+        policy_evaluation_id: UUID,
+        project_id: UUID | None = None,
+    ) -> AuditEvent | None:
+        statement = select(AuditEvent).where(
+            AuditEvent.event_type == event_type,
+            AuditEvent.policy_evaluation_id == policy_evaluation_id,
+        )
+        statement = statement.where(
+            AuditEvent.project_id == project_id
+            if project_id is not None
+            else AuditEvent.project_id.is_(None)
+        )
+        return self.session.scalar(statement)

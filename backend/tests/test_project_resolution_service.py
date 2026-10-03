@@ -8,7 +8,7 @@ from pydantic_ai import Agent, ModelResponse, ToolCallPart, UnexpectedModelBehav
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.ai.schemas import CandidateSignalReference, EvidenceConflict, ProjectResolution, ProjectResolverInput, ResolutionConcern, ResolutionEvidence, ResolutionStatus, ResolverAttachment, ResolverCorrespondence, ResolverSourceField, SourceTextEvidence
-from app.contracts.project_candidate import CandidateSignalSource, CandidateSignalType, ProjectCandidate, ProjectCandidateSet, ProjectCandidateSignal
+from app.contracts.project_candidate import CandidateSignalSource, CandidateSignalType, ProjectCandidate, ProjectCandidateSet, ProjectCandidateSignal, reconstruct_project_candidate_snapshot
 from app.models.enums import AttachmentProcessingState, ProjectStatus
 from app.services.project_resolution import DETERMINISTIC_NO_CANDIDATES_MODEL, ProjectResolutionService, ProjectResolutionValidationError
 
@@ -155,6 +155,12 @@ def test_clear_match_validates_excerpt_computes_offsets_and_persists_proposal() 
     assert text_evidence.provenance_metadata["start_offset"] == context.correspondence.body.index("ALPHA")
     assert text_evidence.provenance_metadata["end_offset"] == context.correspondence.body.index("ALPHA") + 5
     assert repository.proposals[0].structured_output["status"] == "MATCHED"
+    assert (
+        reconstruct_project_candidate_snapshot(
+            repository.proposals[0].input_metadata
+        )
+        == context.candidates
+    )
     assert repository.audit_events[0].details["agent_invoked"] is True
 
 
