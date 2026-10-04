@@ -61,6 +61,10 @@ class ProjectRepository:
         statement = select(Project).order_by(Project.project_code, Project.id)
         return self.session.scalars(statement).all()
 
+    def list_all(self) -> Sequence[Project]:
+        statement = select(Project).order_by(Project.project_code, Project.id)
+        return self.session.scalars(statement).all()
+
     def list(
         self,
         *,

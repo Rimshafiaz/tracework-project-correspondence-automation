@@ -297,6 +297,29 @@ def test_service_errors_have_small_explicit_http_mappings() -> None:
     assert missing_decision.status_code == 404
 
 
+def test_missing_selected_project_is_not_found() -> None:
+    review_id = uuid4()
+    decision = FakeDecisionService()
+
+    def assign_missing(review_id, request):
+        raise ProjectResolutionReviewDecisionError(
+            "one or more selected projects do not exist"
+        )
+
+    decision.assign_or_correct = assign_missing
+    app.dependency_overrides[get_review_decision_service] = lambda: decision
+    try:
+        response = _request(
+            "POST",
+            f"/reviews/project-resolution/{review_id}/assign",
+            json={"project_ids": [str(uuid4())]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+
 def test_anonymous_review_reads_are_rejected() -> None:
     review_id = uuid4()
     service = FakeQueryService(review_id, uuid4())

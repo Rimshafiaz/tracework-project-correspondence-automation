@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
+from app.api.lineage import router as lineage_router
+from app.api.projects import router as projects_router
 from app.api.project_resolution_reviews import router as review_router
+from app.api.reviews import router as consolidated_review_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -19,3 +22,6 @@ app.add_middleware(
 )
 app.include_router(health_router)
 app.include_router(review_router)
+app.include_router(consolidated_review_router)
+app.include_router(projects_router)
+app.include_router(lineage_router)

@@ -1,0 +1,295 @@
+import asyncio
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from httpx import ASGITransport, AsyncClient
+import pytest
+
+from app.ai.requirement_schemas import RequirementReconciliation
+from app.ai.schemas import ProjectResolution, ResolutionConcern, ResolutionStatus
+from app.api.reviews import get_review_queue_query_service
+from app.contracts.project_candidate import ProjectCandidateSet
+from app.contracts.project_resolution_review_queue import (
+    ProjectResolutionReviewCorrespondence,
+    ProjectResolutionReviewDetail,
+    ProjectResolutionReviewPreview,
+    ProjectResolutionReviewSummary,
+)
+from app.contracts.requirement_policy import RequirementPolicyTransitionPreview
+from app.contracts.requirement_reconciliation import RequirementContextSnapshot
+from app.contracts.requirement_review import RequirementReviewHandoff
+from app.contracts.review_queue import (
+    NewRequirementReviewReadDetail,
+    PROJECT_RESOLUTION_ALLOWED_ACTIONS,
+    ProjectResolutionReviewReadDetail,
+    RequirementChangeReviewReadDetail,
+    ReviewQueueSummary,
+)
+from app.contracts.transition_preview import PolicyEvaluationSnapshot, TransitionState
+from app.core.auth import AuthenticatedOperator, get_supabase_jwt_verifier
+from app.main import app
+from app.models.enums import PolicyDecision, ReviewStatus, ReviewType, TransitionDisposition
+from app.services.review_queue import ReviewQueueIntegrityError, ReviewQueueNotFoundError
+
+
+class TestTokenVerifier:
+    def verify(self, token: str) -> AuthenticatedOperator:
+        assert token == "valid-test-token"
+        return AuthenticatedOperator(subject="operator-subject")
+
+
+class FakeReviewQueueService:
+    def __init__(self, summaries) -> None:
+        self.summaries = tuple(summaries)
+        self.details = {}
+        self.error = None
+
+    def list_pending(self):
+        return self.summaries
+
+    def get_detail(self, review_id):
+        if self.error == "integrity":
+            raise ReviewQueueIntegrityError("sensitive internal detail")
+        if review_id not in self.details:
+            raise ReviewQueueNotFoundError("review item was not found")
+        return self.details[review_id]
+
+
+def _summary(review_type):
+    return ReviewQueueSummary(
+        review_item_id=uuid4(),
+        correspondence_event_id=uuid4(),
+        review_type=review_type,
+        status=ReviewStatus.PENDING,
+        review_reason="Human review is required.",
+        created_at=datetime.now(UTC),
+        allowed_actions=(
+            PROJECT_RESOLUTION_ALLOWED_ACTIONS
+            if review_type is ReviewType.PROJECT_RESOLUTION
+            else ()
+        ),
+    )
+
+
+def _project_resolution_detail(summary):
+    policy = PolicyEvaluationSnapshot(
+        id=uuid4(),
+        policy_version="project-identity/1",
+        decision=PolicyDecision.REVIEW_REQUIRED,
+        triggered_rule_ids=("PID-100-NO-MATCH",),
+        reasons=("Manual assignment is required.",),
+    )
+    detail = ProjectResolutionReviewDetail(
+        review=ProjectResolutionReviewSummary(
+            review_item_id=summary.review_item_id,
+            correspondence_event_id=summary.correspondence_event_id,
+            status=summary.status,
+            review_reason=summary.review_reason,
+            created_at=summary.created_at,
+        ),
+        state_transition_id=uuid4(),
+        proposal_id=uuid4(),
+        policy_evaluation_id=policy.id,
+        correspondence=ProjectResolutionReviewCorrespondence(
+            correspondence_event_id=summary.correspondence_event_id,
+            source="gmail",
+            sender_identifier="sender@example.test",
+            subject="Project question",
+            body="Which project is this for?",
+            received_at=datetime.now(UTC),
+        ),
+        preview=ProjectResolutionReviewPreview(
+            correspondence_event_id=summary.correspondence_event_id,
+            resolver_status=ResolutionStatus.NO_MATCH,
+            policy=policy,
+            disposition=TransitionDisposition.REVIEW,
+            requires_manual_project_assignment=True,
+        ),
+        candidate_set=ProjectCandidateSet(),
+        resolution=ProjectResolution(
+            status=ResolutionStatus.NO_MATCH,
+            concerns=(ResolutionConcern.NO_PLAUSIBLE_CANDIDATE,),
+        ),
+    )
+    return ProjectResolutionReviewReadDetail(
+        allowed_actions=PROJECT_RESOLUTION_ALLOWED_ACTIONS,
+        detail=detail,
+    )
+
+
+def _requirement_detail(summary):
+    project_id = uuid4()
+    proposal_id = uuid4()
+    transition_id = uuid4()
+    policy = PolicyEvaluationSnapshot(
+        id=uuid4(),
+        policy_version="requirement-policy/1",
+        decision=PolicyDecision.REVIEW_REQUIRED,
+        triggered_rule_ids=("RID-406-NEW-REQUIREMENT",),
+        reasons=("Human review is required.",),
+    )
+    handoff = RequirementReviewHandoff(
+        correspondence_event_id=summary.correspondence_event_id,
+        proposal_id=proposal_id,
+        policy_evaluation_id=policy.id,
+        state_transition_id=transition_id,
+        project_id=project_id,
+        reconciliation=RequirementReconciliation(),
+        m11_snapshot=RequirementContextSnapshot(
+            project_id=project_id,
+            authoritative_project_link_id=uuid4(),
+            correspondence_event_id=summary.correspondence_event_id,
+            body_sha256="a" * 64,
+            requirements=(),
+        ),
+        current_requirements=(),
+        transition_preview=RequirementPolicyTransitionPreview(
+            current_state=TransitionState(
+                entity_type="requirement_reconciliation",
+                entity_id=proposal_id,
+                values={"project_id": str(project_id)},
+            ),
+            proposed_state=TransitionState(
+                entity_type="requirement_reconciliation",
+                entity_id=proposal_id,
+                values={"project_id": str(project_id)},
+            ),
+            policy=policy,
+            disposition=TransitionDisposition.REVIEW,
+        ),
+    )
+    correspondence = ProjectResolutionReviewCorrespondence(
+        correspondence_event_id=summary.correspondence_event_id,
+        source="gmail",
+        sender_identifier="sender@example.test",
+        subject="Requirement update",
+        body="Please review the requirement proposal.",
+        received_at=datetime.now(UTC),
+    )
+    detail_type = (
+        NewRequirementReviewReadDetail
+        if summary.review_type is ReviewType.NEW_REQUIREMENT
+        else RequirementChangeReviewReadDetail
+    )
+    return detail_type(
+        review=summary,
+        correspondence=correspondence,
+        handoff=handoff,
+    )
+
+
+@pytest.fixture
+def review_api():
+    summaries = [
+        _summary(ReviewType.PROJECT_RESOLUTION),
+        _summary(ReviewType.REQUIREMENT_CHANGE),
+        _summary(ReviewType.NEW_REQUIREMENT),
+    ]
+    service = FakeReviewQueueService(summaries)
+    service.details = {
+        summaries[0].review_item_id: _project_resolution_detail(summaries[0]),
+        summaries[1].review_item_id: _requirement_detail(summaries[1]),
+        summaries[2].review_item_id: _requirement_detail(summaries[2]),
+    }
+    app.dependency_overrides[get_supabase_jwt_verifier] = TestTokenVerifier
+    app.dependency_overrides[get_review_queue_query_service] = lambda: service
+    yield service, summaries
+    app.dependency_overrides.clear()
+
+
+def _request(path, *, authenticated=True):
+    async def send():
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            headers = (
+                {"Authorization": "Bearer valid-test-token"}
+                if authenticated
+                else None
+            )
+            return await client.get(path, headers=headers)
+
+    return asyncio.run(send())
+
+
+def test_consolidated_review_list_requires_authentication(review_api) -> None:
+    assert _request("/reviews", authenticated=False).status_code == 401
+
+
+def test_consolidated_review_list_exposes_mixed_capabilities(review_api) -> None:
+    _, summaries = review_api
+
+    response = _request("/reviews")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["review_type"] for item in payload] == [
+        "PROJECT_RESOLUTION",
+        "REQUIREMENT_CHANGE",
+        "NEW_REQUIREMENT",
+    ]
+    assert payload[0]["allowed_actions"] == [
+        "APPROVE",
+        "ASSIGN_OR_CORRECT",
+        "REJECT",
+    ]
+    assert payload[1]["allowed_actions"] == []
+    assert payload[2]["allowed_actions"] == []
+    assert [item["review_item_id"] for item in payload] == [
+        str(item.review_item_id) for item in summaries
+    ]
+
+
+@pytest.mark.parametrize(
+    ("index", "review_type"),
+    [
+        (0, "PROJECT_RESOLUTION"),
+        (1, "REQUIREMENT_CHANGE"),
+        (2, "NEW_REQUIREMENT"),
+    ],
+)
+def test_consolidated_review_detail_is_discriminated_by_type(
+    review_api,
+    index,
+    review_type,
+) -> None:
+    _, summaries = review_api
+
+    response = _request(f"/reviews/{summaries[index].review_item_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["review_type"] == review_type
+    if index == 0:
+        assert payload["detail"]["preview"]["policy"]["policy_version"] == (
+            "project-identity/1"
+        )
+        assert payload["allowed_actions"] == [
+            "APPROVE",
+            "ASSIGN_OR_CORRECT",
+            "REJECT",
+        ]
+    else:
+        assert payload["handoff"]["transition_preview"]["policy"][
+            "policy_version"
+        ] == "requirement-policy/1"
+        assert payload["allowed_actions"] == []
+
+
+def test_unknown_review_is_not_found(review_api) -> None:
+    response = _request(f"/reviews/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "review item was not found"}
+
+
+def test_broken_review_history_is_sanitized(review_api) -> None:
+    service, _ = review_api
+    service.error = "integrity"
+
+    response = _request(f"/reviews/{uuid4()}")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "review history is inconsistent"}
+    assert "sensitive" not in response.text

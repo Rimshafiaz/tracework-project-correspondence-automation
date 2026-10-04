@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,8 +14,8 @@ from app.contracts.project_resolution_review_queue import (
     ProjectResolutionReviewSummary,
     ReviewActor,
 )
+from app.api.dependencies import get_session
 from app.core.auth import AuthenticatedOperator, require_authenticated_operator
-from app.db.session import SessionLocal
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import (
     CorrespondenceProjectLinkRepository,
@@ -38,11 +37,6 @@ router = APIRouter(
     tags=["reviews"],
     dependencies=[Depends(require_authenticated_operator)],
 )
-
-
-def get_session() -> Iterator[Session]:
-    with SessionLocal() as session:
-        yield session
 
 
 def get_review_query_service(
@@ -199,7 +193,7 @@ def _decision_http_error(
     if "not found" in message:
         code = status.HTTP_404_NOT_FOUND
     elif "do not exist" in message:
-        code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        code = status.HTTP_404_NOT_FOUND
     else:
         code = status.HTTP_409_CONFLICT
     return HTTPException(status_code=code, detail=message)

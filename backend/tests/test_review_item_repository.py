@@ -26,6 +26,34 @@ def test_list_pending_project_reviews_is_filtered_and_ordered() -> None:
     assert len(statement._order_by_clauses) == 2
 
 
+def test_list_pending_reviews_is_type_bounded_and_deterministically_ordered() -> None:
+    session = MagicMock(spec=Session)
+    repository = ReviewItemRepository(session)
+    expected = [MagicMock(spec=ReviewItem)]
+    session.scalars.return_value.all.return_value = expected
+
+    result = repository.list_pending(
+        {
+            ReviewType.PROJECT_RESOLUTION,
+            ReviewType.REQUIREMENT_CHANGE,
+            ReviewType.NEW_REQUIREMENT,
+        }
+    )
+
+    assert result == expected
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._where_criteria) == 2
+    assert len(statement._order_by_clauses) == 2
+
+
+def test_list_pending_reviews_skips_database_for_no_supported_types() -> None:
+    session = MagicMock(spec=Session)
+    repository = ReviewItemRepository(session)
+
+    assert repository.list_pending(set()) == []
+    session.scalars.assert_not_called()
+
+
 def test_get_for_update_locks_review_row() -> None:
     session = MagicMock(spec=Session)
     repository = ReviewItemRepository(session)

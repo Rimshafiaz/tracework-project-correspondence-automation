@@ -117,6 +117,22 @@ def test_list_for_fuzzy_name_retrieval_is_ordered_and_read_only() -> None:
     session.commit.assert_not_called()
 
 
+def test_list_all_is_complete_ordered_and_read_only() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectRepository(session)
+    expected = [MagicMock(spec=Project) for _ in range(101)]
+    session.scalars.return_value.all.return_value = expected
+
+    assert repository.list_all() == expected
+
+    statement = session.scalars.call_args.args[0]
+    assert len(statement._order_by_clauses) == 2
+    assert statement._limit_clause is None
+    assert statement._offset_clause is None
+    session.flush.assert_not_called()
+    session.commit.assert_not_called()
+
+
 def test_list_returns_filtered_paginated_projects() -> None:
     session = MagicMock(spec=Session)
     repository = ProjectRepository(session)

@@ -39,6 +39,21 @@ class ReviewItemRepository:
             .order_by(ReviewItem.created_at, ReviewItem.id)
         ).all()
 
+    def list_pending(
+        self,
+        review_types: set[ReviewType],
+    ) -> Sequence[ReviewItem]:
+        if not review_types:
+            return []
+        return self.session.scalars(
+            select(ReviewItem)
+            .where(
+                ReviewItem.review_type.in_(review_types),
+                ReviewItem.status == ReviewStatus.PENDING,
+            )
+            .order_by(ReviewItem.created_at, ReviewItem.id)
+        ).all()
+
     def get_by_state_transition(
         self,
         state_transition_id: UUID,
