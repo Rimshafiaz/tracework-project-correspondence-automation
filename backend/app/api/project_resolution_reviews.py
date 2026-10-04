@@ -10,11 +10,12 @@ from app.contracts.project_resolution_review_queue import (
     ProjectResolutionReviewDecisionContext,
     ProjectResolutionReviewDecisionResponse,
     ProjectResolutionReviewDetail,
-    ProjectResolutionReviewOperatorRequest,
+    ProjectResolutionReviewRequest,
     ProjectResolutionReviewReplacementAssignment,
     ProjectResolutionReviewSummary,
     ReviewActor,
 )
+from app.core.auth import AuthenticatedOperator, require_authenticated_operator
 from app.db.session import SessionLocal
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import (
@@ -32,7 +33,11 @@ from app.services.project_resolution_review_query import (
     ProjectResolutionReviewQueryService,
 )
 
-router = APIRouter(prefix="/reviews/project-resolution", tags=["reviews"])
+router = APIRouter(
+    prefix="/reviews/project-resolution",
+    tags=["reviews"],
+    dependencies=[Depends(require_authenticated_operator)],
+)
 
 
 def get_session() -> Iterator[Session]:
@@ -90,7 +95,8 @@ def get_project_resolution_review(
 )
 def approve_project_resolution_review(
     review_item_id: UUID,
-    request: ProjectResolutionReviewOperatorRequest,
+    request: ProjectResolutionReviewRequest,
+    operator: AuthenticatedOperator = Depends(require_authenticated_operator),
     service: ProjectResolutionReviewDecisionService = Depends(
         get_review_decision_service
     ),
@@ -99,7 +105,7 @@ def approve_project_resolution_review(
         result = service.approve(
             review_item_id,
             ProjectResolutionReviewApproval(
-                actor=_operator_actor(request.actor_identifier),
+                actor=_authenticated_actor(operator),
                 comment=request.comment,
             ),
         )
@@ -115,6 +121,7 @@ def approve_project_resolution_review(
 def assign_project_resolution_review(
     review_item_id: UUID,
     request: ProjectResolutionReviewAssignmentRequest,
+    operator: AuthenticatedOperator = Depends(require_authenticated_operator),
     service: ProjectResolutionReviewDecisionService = Depends(
         get_review_decision_service
     ),
@@ -123,7 +130,7 @@ def assign_project_resolution_review(
         result = service.assign_or_correct(
             review_item_id,
             ProjectResolutionReviewReplacementAssignment(
-                actor=_operator_actor(request.actor_identifier),
+                actor=_authenticated_actor(operator),
                 comment=request.comment,
                 project_ids=request.project_ids,
             ),
@@ -139,7 +146,8 @@ def assign_project_resolution_review(
 )
 def reject_project_resolution_review(
     review_item_id: UUID,
-    request: ProjectResolutionReviewOperatorRequest,
+    request: ProjectResolutionReviewRequest,
+    operator: AuthenticatedOperator = Depends(require_authenticated_operator),
     service: ProjectResolutionReviewDecisionService = Depends(
         get_review_decision_service
     ),
@@ -148,7 +156,7 @@ def reject_project_resolution_review(
         result = service.reject(
             review_item_id,
             ProjectResolutionReviewDecisionContext(
-                actor=_operator_actor(request.actor_identifier),
+                actor=_authenticated_actor(operator),
                 comment=request.comment,
             ),
         )
@@ -157,10 +165,10 @@ def reject_project_resolution_review(
         raise _decision_http_error(exc) from exc
 
 
-def _operator_actor(actor_identifier: str) -> ReviewActor:
+def _authenticated_actor(operator: AuthenticatedOperator) -> ReviewActor:
     return ReviewActor(
-        actor_type="operator_supplied",
-        actor_identifier=actor_identifier,
+        actor_type="authenticated_operator",
+        actor_identifier=operator.subject,
     )
 
 

@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.10,<3",
     "pymupdf>=1.28,<2",
+    "PyJWT[crypto]>=2.10,<3",
     "python-docx>=1.2,<2",
     "pydantic-ai-slim[google]>=2.53,<3",
     "rapidfuzz>=3.14,<4",

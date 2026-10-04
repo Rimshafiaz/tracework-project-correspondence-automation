@@ -27,6 +27,7 @@ class ProjectActivityEvent(BaseModel):
     requirement_id: UUID | None = None
     summary: str
     attribution: LineageAttribution
+    authenticated_operator_subject: str | None = None
     operator_supplied_actor_label: str | None = None
     proposal_id: UUID | None = None
     policy_evaluation_id: UUID | None = None

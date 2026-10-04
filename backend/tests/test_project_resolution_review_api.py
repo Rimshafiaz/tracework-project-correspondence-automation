@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
+import pytest
 
 from app.ai.schemas import ProjectResolution, ResolutionConcern, ResolutionStatus
 from app.api.project_resolution_reviews import (
@@ -22,6 +23,7 @@ from app.contracts.project_resolution_review_queue import (
     ProjectResolutionReviewSummary,
 )
 from app.contracts.transition_preview import PolicyEvaluationSnapshot
+from app.core.auth import AuthenticatedOperator, get_supabase_jwt_verifier
 from app.main import app
 from app.models.enums import (
     PolicyDecision,
@@ -36,13 +38,37 @@ from app.services.project_resolution_review_query import (
 )
 
 
-def _request(method: str, path: str, *, json=None):
+AUTHENTICATED_SUBJECT = "supabase-user-id"
+
+
+class TestTokenVerifier:
+    def verify(self, token: str) -> AuthenticatedOperator:
+        assert token == "valid-test-token"
+        return AuthenticatedOperator(
+            subject=AUTHENTICATED_SUBJECT,
+            email="operator@example.test",
+        )
+
+
+@pytest.fixture(autouse=True)
+def authenticated_operator_override():
+    app.dependency_overrides[get_supabase_jwt_verifier] = TestTokenVerifier
+    yield
+    app.dependency_overrides.clear()
+
+
+def _request(method: str, path: str, *, json=None, authenticated=True):
     async def send():
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            return await client.request(method, path, json=json)
+            headers = (
+                {"Authorization": "Bearer valid-test-token"}
+                if authenticated
+                else None
+            )
+            return await client.request(method, path, json=json, headers=headers)
 
     return asyncio.run(send())
 
@@ -184,20 +210,19 @@ def test_decision_endpoints_keep_approval_and_assignment_distinct() -> None:
         approved = _request(
             "POST",
             f"/reviews/project-resolution/{review_id}/approve",
-            json={"actor_identifier": "operator-label", "comment": "approved"},
+            json={"comment": "approved"},
         )
         assigned = _request(
             "POST",
             f"/reviews/project-resolution/{review_id}/assign",
             json={
-                "actor_identifier": "operator-label",
                 "project_ids": [str(project_id)],
             },
         )
         rejected = _request(
             "POST",
             f"/reviews/project-resolution/{review_id}/reject",
-            json={"actor_identifier": "operator-label"},
+            json={},
         )
     finally:
         app.dependency_overrides.clear()
@@ -213,10 +238,17 @@ def test_decision_endpoints_keep_approval_and_assignment_distinct() -> None:
     assert isinstance(assignment, ProjectResolutionReviewReplacementAssignment)
     assert assignment.project_ids == (project_id,)
     assert isinstance(rejection, ProjectResolutionReviewDecisionContext)
-    assert all(call[2].actor.actor_type == "operator_supplied" for call in service.calls)
+    assert all(
+        call[2].actor.actor_type == "authenticated_operator"
+        for call in service.calls
+    )
+    assert all(
+        call[2].actor.actor_identifier == AUTHENTICATED_SUBJECT
+        for call in service.calls
+    )
 
 
-def test_request_body_cannot_claim_an_authenticated_actor_type() -> None:
+def test_request_body_cannot_spoof_actor_identity() -> None:
     review_id = uuid4()
     service = FakeDecisionService()
     app.dependency_overrides[get_review_decision_service] = lambda: service
@@ -225,8 +257,7 @@ def test_request_body_cannot_claim_an_authenticated_actor_type() -> None:
             "POST",
             f"/reviews/project-resolution/{review_id}/approve",
             json={
-                "actor_identifier": "operator-label",
-                "actor_type": "authenticated_user",
+                "actor_identifier": "another-user-id",
             },
         )
     finally:
@@ -257,10 +288,49 @@ def test_service_errors_have_small_explicit_http_mappings() -> None:
         missing_decision = _request(
             "POST",
             f"/reviews/project-resolution/{review_id}/reject",
-            json={"actor_identifier": "operator-label"},
+            json={},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert missing_detail.status_code == 404
     assert missing_decision.status_code == 404
+
+
+def test_anonymous_review_reads_are_rejected() -> None:
+    review_id = uuid4()
+    service = FakeQueryService(review_id, uuid4())
+    app.dependency_overrides[get_review_query_service] = lambda: service
+
+    listed = _request(
+        "GET",
+        "/reviews/project-resolution",
+        authenticated=False,
+    )
+    detail = _request(
+        "GET",
+        f"/reviews/project-resolution/{review_id}",
+        authenticated=False,
+    )
+
+    assert listed.status_code == 401
+    assert detail.status_code == 401
+
+
+@pytest.mark.parametrize("action", ["approve", "assign", "reject"])
+def test_anonymous_review_mutations_are_rejected(action) -> None:
+    review_id = uuid4()
+    project_id = uuid4()
+    service = FakeDecisionService()
+    app.dependency_overrides[get_review_decision_service] = lambda: service
+    payload = {"project_ids": [str(project_id)]} if action == "assign" else {}
+
+    response = _request(
+        "POST",
+        f"/reviews/project-resolution/{review_id}/{action}",
+        json=payload,
+        authenticated=False,
+    )
+
+    assert response.status_code == 401
+    assert service.calls == []

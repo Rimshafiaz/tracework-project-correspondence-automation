@@ -147,7 +147,7 @@ def test_human_resolution_uses_operator_label_without_authentication_claim() -> 
         REVIEW_RESOLVED_AUDIT_EVENT,
         datetime.now(UTC),
         details={"selected_project_ids": [str(project_id)]},
-        actor_type="human_operator",
+        actor_type="operator_supplied",
         actor_identifier="reviewer-label",
     )
     service, _ = _service(project_id, [audit])
@@ -156,7 +156,25 @@ def test_human_resolution_uses_operator_label_without_authentication_claim() -> 
 
     assert event.attribution is LineageAttribution.HUMAN
     assert event.operator_supplied_actor_label == "reviewer-label"
+    assert event.authenticated_operator_subject is None
     assert "linked" in event.summary
+
+
+def test_authenticated_activity_subject_is_not_labeled_operator_supplied() -> None:
+    project_id = uuid4()
+    audit = _audit(
+        REVIEW_RESOLVED_AUDIT_EVENT,
+        datetime.now(UTC),
+        details={"selected_project_ids": [str(project_id)]},
+        actor_type="authenticated_operator",
+        actor_identifier="supabase-user-id",
+    )
+    service, _ = _service(project_id, [audit])
+
+    event = service.load(project_id).events[0]
+
+    assert event.authenticated_operator_subject == "supabase-user-id"
+    assert event.operator_supplied_actor_label is None
 
 
 def test_resolution_away_from_candidate_project_is_not_shown_as_a_link() -> None:
@@ -165,7 +183,7 @@ def test_resolution_away_from_candidate_project_is_not_shown_as_a_link() -> None
         REVIEW_RESOLVED_AUDIT_EVENT,
         datetime.now(UTC),
         details={"selected_project_ids": [str(uuid4())]},
-        actor_type="human_operator",
+        actor_type="operator_supplied",
     )
     service, _ = _service(project_id, [audit])
 

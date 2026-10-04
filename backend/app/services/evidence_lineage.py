@@ -187,7 +187,16 @@ class EvidenceLineageService:
                     id=item.id,
                     event_type=item.event_type,
                     actor_type=item.actor_type,
-                    operator_supplied_actor_label=item.actor_identifier,
+                    authenticated_operator_subject=(
+                        item.actor_identifier
+                        if item.actor_type == "authenticated_operator"
+                        else None
+                    ),
+                    operator_supplied_actor_label=(
+                        item.actor_identifier
+                        if item.actor_type == "operator_supplied"
+                        else None
+                    ),
                     details=item.details,
                     occurred_at=item.occurred_at,
                 )
@@ -196,8 +205,17 @@ class EvidenceLineageService:
             historical_outcome=LineageOutcome(
                 attribution=self._attribution(transition, review),
                 occurred_at=outcome_at,
+                authenticated_operator_subject=(
+                    human_audit.actor_identifier
+                    if human_audit
+                    and human_audit.actor_type == "authenticated_operator"
+                    else None
+                ),
                 operator_supplied_actor_label=(
-                    human_audit.actor_identifier if human_audit else None
+                    human_audit.actor_identifier
+                    if human_audit
+                    and human_audit.actor_type == "operator_supplied"
+                    else None
                 ),
             ),
             current_state=LineageCurrentState(

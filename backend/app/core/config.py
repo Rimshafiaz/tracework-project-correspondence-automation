@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,9 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
     database_url: str
+    supabase_auth_issuer: str | None = None
+    supabase_auth_audience: str = "authenticated"
+    cors_allowed_origins: str = "http://localhost:5173"
     gmail_enabled: bool = False
     gmail_account_email: str | None = None
     gmail_label_id: str | None = None
@@ -40,24 +44,80 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_gmail_configuration(self) -> "Settings":
-        if not self.gmail_enabled:
-            return self
-        required = {
-            "GMAIL_ACCOUNT_EMAIL": self.gmail_account_email,
-            "GMAIL_LABEL_ID": self.gmail_label_id,
-            "GMAIL_INITIAL_AFTER_EPOCH_SECONDS": (
-                self.gmail_initial_after_epoch_seconds
-            ),
-        }
-        missing = [name for name, value in required.items() if value in (None, "")]
-        if missing:
-            raise ValueError(
-                f"Gmail is enabled but these settings are missing: {', '.join(missing)}"
-            )
-        if self.gmail_initial_after_epoch_seconds < 0:
-            raise ValueError("GMAIL_INITIAL_AFTER_EPOCH_SECONDS must be nonnegative")
+    def validate_runtime_configuration(self) -> "Settings":
+        if self.app_env == "production" and self.supabase_auth_issuer is None:
+            raise ValueError("SUPABASE_AUTH_ISSUER is required in production")
+        if self.gmail_enabled:
+            required = {
+                "GMAIL_ACCOUNT_EMAIL": self.gmail_account_email,
+                "GMAIL_LABEL_ID": self.gmail_label_id,
+                "GMAIL_INITIAL_AFTER_EPOCH_SECONDS": (
+                    self.gmail_initial_after_epoch_seconds
+                ),
+            }
+            missing = [name for name, value in required.items() if value in (None, "")]
+            if missing:
+                raise ValueError(
+                    "Gmail is enabled but these settings are missing: "
+                    f"{', '.join(missing)}"
+                )
+            if self.gmail_initial_after_epoch_seconds < 0:
+                raise ValueError(
+                    "GMAIL_INITIAL_AFTER_EPOCH_SECONDS must be nonnegative"
+                )
         return self
+
+    @field_validator("supabase_auth_issuer")
+    @classmethod
+    def validate_supabase_auth_issuer(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().rstrip("/")
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("SUPABASE_AUTH_ISSUER must be an HTTP(S) URL")
+        if not parsed.path.endswith("/auth/v1"):
+            raise ValueError("SUPABASE_AUTH_ISSUER must end with /auth/v1")
+        return value
+
+    @field_validator("supabase_auth_audience")
+    @classmethod
+    def validate_supabase_auth_audience(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("SUPABASE_AUTH_AUDIENCE must not be blank")
+        return value
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: str) -> str:
+        origins = tuple(
+            origin.strip().rstrip("/")
+            for origin in value.split(",")
+            if origin.strip()
+        )
+        if not origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS must contain at least one origin")
+        if "*" in origins or len(origins) != len(set(origins)):
+            raise ValueError("CORS_ALLOWED_ORIGINS must be explicit and unique")
+        for origin in origins:
+            parsed = urlparse(origin)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path not in {"", "/"}
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS entries must be HTTP(S) origins"
+                )
+        return ",".join(origins)
+
+    @property
+    def cors_origins(self) -> tuple[str, ...]:
+        return tuple(self.cors_allowed_origins.split(","))
 
     @field_validator("project_resolver_model", "requirement_reconciler_model")
     @classmethod

@@ -129,6 +129,7 @@ class LineageAuditEvent(BaseModel):
     id: UUID
     event_type: str
     actor_type: str
+    authenticated_operator_subject: str | None
     operator_supplied_actor_label: str | None
     details: dict[str, JsonValue]
     occurred_at: datetime
@@ -156,6 +157,7 @@ class LineageOutcome(BaseModel):
 
     attribution: LineageAttribution
     occurred_at: datetime | None
+    authenticated_operator_subject: str | None
     operator_supplied_actor_label: str | None
 
 

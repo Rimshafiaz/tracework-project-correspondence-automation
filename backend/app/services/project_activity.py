@@ -189,8 +189,15 @@ class ProjectActivityService:
                 if human
                 else LineageAttribution.AUTOMATIC
             ),
+            authenticated_operator_subject=(
+                audit.actor_identifier
+                if audit.actor_type == "authenticated_operator"
+                else None
+            ),
             operator_supplied_actor_label=(
-                audit.actor_identifier if human else None
+                audit.actor_identifier
+                if audit.actor_type == "operator_supplied"
+                else None
             ),
             proposal_id=audit.ai_proposal_id,
             policy_evaluation_id=audit.policy_evaluation_id,

@@ -20,7 +20,12 @@ from app.models.enums import (
 from app.services.evidence_lineage import EvidenceLineageError, EvidenceLineageService
 
 
-def _service_fixture(*, with_review: bool = False, with_audits: bool = True):
+def _service_fixture(
+    *,
+    with_review: bool = False,
+    with_audits: bool = True,
+    actor_type: str = "operator_supplied",
+):
     now = datetime.now(UTC)
     correspondence_id = uuid4()
     proposal_id = uuid4()
@@ -121,7 +126,7 @@ def _service_fixture(*, with_review: bool = False, with_audits: bool = True):
     audit = SimpleNamespace(
         id=uuid4(),
         event_type="requirement_policy_auto_applied",
-        actor_type="human_operator" if with_review else "system",
+        actor_type=actor_type if with_review else "system",
         actor_identifier="reviewer-label" if with_review else None,
         details={"authorization": "HUMAN_REVIEW" if with_review else "AUTO_POLICY"},
         occurred_at=now + timedelta(seconds=3),
@@ -185,7 +190,23 @@ def test_lineage_exposes_human_operator_label_without_claiming_authentication() 
 
     assert result.historical_outcome.attribution is LineageAttribution.HUMAN
     assert result.historical_outcome.operator_supplied_actor_label == "reviewer-label"
+    assert result.historical_outcome.authenticated_operator_subject is None
     assert result.audit_events[0].operator_supplied_actor_label == "reviewer-label"
+    assert result.audit_events[0].authenticated_operator_subject is None
+
+
+def test_lineage_exposes_authenticated_subject_separately() -> None:
+    service, transition_id, _ = _service_fixture(
+        with_review=True,
+        actor_type="authenticated_operator",
+    )
+
+    result = service.load(transition_id)
+
+    assert result.historical_outcome.authenticated_operator_subject == "reviewer-label"
+    assert result.historical_outcome.operator_supplied_actor_label is None
+    assert result.audit_events[0].authenticated_operator_subject == "reviewer-label"
+    assert result.audit_events[0].operator_supplied_actor_label is None
 
 
 def test_lineage_marks_missing_legacy_audit_as_partial() -> None:

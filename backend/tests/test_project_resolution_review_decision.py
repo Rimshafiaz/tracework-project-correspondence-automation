@@ -273,6 +273,22 @@ def test_approval_uses_exact_m8_project_set_and_preserves_history() -> None:
     fixture.session.commit.assert_called_once_with()
 
 
+def test_authenticated_actor_is_preserved_in_review_audit() -> None:
+    fixture = DecisionFixture()
+    actor = ReviewActor(
+        actor_type="authenticated_operator",
+        actor_identifier="supabase-user-id",
+    )
+
+    fixture.service().approve(
+        fixture.review.id,
+        ProjectResolutionReviewApproval(actor=actor),
+    )
+
+    assert fixture.audits[0].actor_type == "authenticated_operator"
+    assert fixture.audits[0].actor_identifier == "supabase-user-id"
+
+
 def test_correction_uses_replacement_set_and_supersedes_m8_preview() -> None:
     fixture = DecisionFixture()
     replacement_id = fixture.add_project()

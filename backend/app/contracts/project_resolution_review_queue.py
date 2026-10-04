@@ -66,19 +66,10 @@ class ProjectResolutionReviewReplacementAssignment(
         return value
 
 
-class ProjectResolutionReviewOperatorRequest(BaseModel):
+class ProjectResolutionReviewRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    actor_identifier: str
     comment: str | None = None
-
-    @field_validator("actor_identifier")
-    @classmethod
-    def reject_blank_operator_label(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("operator audit label must not be blank")
-        return value
 
     @field_validator("comment")
     @classmethod
@@ -90,7 +81,7 @@ class ProjectResolutionReviewOperatorRequest(BaseModel):
 
 
 class ProjectResolutionReviewAssignmentRequest(
-    ProjectResolutionReviewOperatorRequest
+    ProjectResolutionReviewRequest
 ):
     project_ids: tuple[UUID, ...] = Field(min_length=1)
 
