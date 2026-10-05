@@ -43,6 +43,18 @@ class IngestionCursorRepository:
             statement = statement.with_for_update()
         return self.session.scalar(statement)
 
+    def get_read_only(
+        self,
+        *,
+        source: str,
+        account_identifier: str,
+    ) -> IngestionCursor | None:
+        return self.get(
+            source=source,
+            account_identifier=account_identifier,
+            for_update=False,
+        )
+
     def mark_succeeded(
         self,
         cursor: IngestionCursor,

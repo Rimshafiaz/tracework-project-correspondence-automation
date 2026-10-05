@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
+from app.api.integrations import router as integrations_router
 from app.api.lineage import router as lineage_router
 from app.api.projects import router as projects_router
 from app.api.project_resolution_reviews import router as review_router
@@ -25,3 +26,4 @@ app.include_router(review_router)
 app.include_router(consolidated_review_router)
 app.include_router(projects_router)
 app.include_router(lineage_router)
+app.include_router(integrations_router)

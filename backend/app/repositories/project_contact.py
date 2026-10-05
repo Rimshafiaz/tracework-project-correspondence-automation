@@ -15,6 +15,33 @@ class ProjectContactRepository:
     def get(self, contact_id: UUID) -> ProjectContact | None:
         return self.session.get(ProjectContact, contact_id)
 
+    def create(
+        self,
+        *,
+        project_id: UUID,
+        email_normalized: str,
+        display_name: str,
+        role: str | None = None,
+    ) -> ProjectContact:
+        contact = ProjectContact(
+            project_id=project_id,
+            email_normalized=email_normalized,
+            display_name=display_name,
+            role=role,
+            is_active=True,
+        )
+        self.session.add(contact)
+        self.session.flush()
+        return contact
+
+    def list_for_project(self, project_id: UUID) -> Sequence[ProjectContact]:
+        statement = (
+            select(ProjectContact)
+            .where(ProjectContact.project_id == project_id)
+            .order_by(ProjectContact.created_at, ProjectContact.id)
+        )
+        return self.session.scalars(statement).all()
+
     def find_active_with_projects(
         self,
         email_normalized: str,

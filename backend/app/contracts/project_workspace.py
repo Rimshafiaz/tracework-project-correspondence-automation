@@ -38,9 +38,20 @@ class ProjectWorkspaceRequirement(BaseModel):
     updated_at: datetime
 
 
+class ProjectWorkspaceContact(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: UUID
+    email: str
+    display_name: str
+    role: str | None
+    is_active: bool
+
+
 class ProjectWorkspace(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     project: ProjectSummary
     identifiers: tuple[ProjectWorkspaceIdentifier, ...]
     requirements: tuple[ProjectWorkspaceRequirement, ...]
+    contacts: tuple[ProjectWorkspaceContact, ...] = ()

@@ -8,6 +8,7 @@ import pytest
 from app.models.enums import ProjectStatus, RequirementState
 from app.repositories.project import ProjectRepository
 from app.repositories.project_identifier import ProjectIdentifierRepository
+from app.repositories.project_contact import ProjectContactRepository
 from app.repositories.requirement import RequirementRepository
 from app.services.project_workspace import (
     ProjectWorkspaceNotFoundError,
@@ -29,21 +30,24 @@ def _project(*, code: str, created_at: datetime):
 def _service():
     projects = MagicMock(spec=ProjectRepository)
     identifiers = MagicMock(spec=ProjectIdentifierRepository)
+    contacts = MagicMock(spec=ProjectContactRepository)
     requirements = MagicMock(spec=RequirementRepository)
     return (
         ProjectWorkspaceService(
             project_repository=projects,
             identifier_repository=identifiers,
+            contact_repository=contacts,
             requirement_repository=requirements,
         ),
         projects,
         identifiers,
+        contacts,
         requirements,
     )
 
 
 def test_list_projects_maps_complete_repository_order() -> None:
-    service, projects, identifiers, requirements = _service()
+    service, projects, identifiers, contacts, requirements = _service()
     now = datetime.now(UTC)
     project_b = _project(code="B-200", created_at=now)
     project_a = _project(code="A-100", created_at=now + timedelta(seconds=1))
@@ -55,11 +59,12 @@ def test_list_projects_maps_complete_repository_order() -> None:
     assert [item.project_code for item in result] == ["A-100", "B-200"]
     projects.list_all.assert_called_once_with()
     identifiers.assert_not_called()
+    contacts.assert_not_called()
     requirements.assert_not_called()
 
 
 def test_workspace_maps_identifiers_and_authoritative_requirements() -> None:
-    service, projects, identifiers, requirements = _service()
+    service, projects, identifiers, contacts, requirements = _service()
     now = datetime.now(UTC)
     project = _project(code="GEN-1", created_at=now)
     projects.get.return_value = project
@@ -81,6 +86,14 @@ def test_workspace_maps_identifiers_and_authoritative_requirements() -> None:
         first_identifier,
         second_identifier,
     ]
+    contact = SimpleNamespace(
+        id=uuid4(),
+        email_normalized="trusted@example.com",
+        display_name="Trusted Contact",
+        role="Reviewer",
+        is_active=True,
+    )
+    contacts.list_for_project.return_value = [contact]
     first_requirement = SimpleNamespace(
         id=uuid4(),
         name="Provide approval",
@@ -113,6 +126,8 @@ def test_workspace_maps_identifiers_and_authoritative_requirements() -> None:
     ]
     assert result.identifiers[0].display_value == "External 42"
     assert not hasattr(result.identifiers[0], "normalized_value")
+    assert result.contacts[0].email == "trusted@example.com"
+    assert not hasattr(result.contacts[0], "email_normalized")
     assert [item.id for item in result.requirements] == [
         first_requirement.id,
         second_requirement.id,
@@ -120,11 +135,12 @@ def test_workspace_maps_identifiers_and_authoritative_requirements() -> None:
     assert result.requirements[0].state is RequirementState.PARTIAL
     assert result.requirements[0].expected_date == date(2026, 11, 1)
     identifiers.list_for_project.assert_called_once_with(project.id)
+    contacts.list_for_project.assert_called_once_with(project.id)
     requirements.list_for_project.assert_called_once_with(project.id)
 
 
 def test_unknown_project_stops_before_loading_workspace_children() -> None:
-    service, projects, identifiers, requirements = _service()
+    service, projects, identifiers, contacts, requirements = _service()
     project_id = uuid4()
     projects.get.return_value = None
 
@@ -132,4 +148,5 @@ def test_unknown_project_stops_before_loading_workspace_children() -> None:
         service.get_workspace(project_id)
 
     identifiers.list_for_project.assert_not_called()
+    contacts.list_for_project.assert_not_called()
     requirements.list_for_project.assert_not_called()

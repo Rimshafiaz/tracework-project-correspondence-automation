@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models.enums import ProjectStatus
 from app.models.project import Project
 
+PROJECT_CODE_SEQUENCE_NAME = "tracework_project_code_seq"
+
 
 class ProjectRepository:
     def __init__(self, session: Session) -> None:
@@ -29,6 +31,14 @@ class ProjectRepository:
         self.session.add(project)
         self.session.flush()
         return project
+
+    def allocate_project_code(self) -> str:
+        sequence_value = self.session.scalar(
+            select(func.nextval(PROJECT_CODE_SEQUENCE_NAME))
+        )
+        if sequence_value is None:
+            raise RuntimeError("project code sequence did not return a value")
+        return f"TW-{sequence_value:03d}"
 
     def get(self, project_id: UUID) -> Project | None:
         return self.session.get(Project, project_id)

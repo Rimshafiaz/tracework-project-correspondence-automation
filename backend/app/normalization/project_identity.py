@@ -21,6 +21,10 @@ def normalize_project_code(value: str) -> str:
     return _required(value, field="project code").casefold()
 
 
+def canonicalize_project_code(value: str) -> str:
+    return _required(value, field="project code").upper()
+
+
 def normalize_project_name(value: str) -> str:
     return _required(value, field="project name").casefold()
 
