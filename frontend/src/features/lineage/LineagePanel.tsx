@@ -6,7 +6,7 @@ import { getTransitionLineage } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import type { EvidenceLineage, JsonValue, LineageEvidence } from "../../api/types";
 import { ErrorState } from "../../components/ErrorState";
-import { formatDateOnly, formatDateTime } from "../../lib/format";
+import { formatDateOnly } from "../../lib/format";
 
 export function LineagePanel({
   transitionId,
@@ -21,7 +21,10 @@ export function LineagePanel({
   });
 
   return (
-    <LineageDialog onClose={onClose}>
+    <LineageDialog
+      onClose={onClose}
+      subtitle={lineage.data ? lineageSubtitle(lineage.data) : undefined}
+    >
       {lineage.isPending ? <LineageLoading /> : null}
       {lineage.isError ? (
         <LineageError error={lineage.error} retry={() => void lineage.refetch()} />
@@ -39,13 +42,21 @@ export function DevelopmentLineagePanel({
   onClose: () => void;
 }) {
   return (
-    <LineageDialog onClose={onClose}>
+    <LineageDialog onClose={onClose} subtitle={lineageSubtitle(lineage)}>
       <LineageContent lineage={lineage} />
     </LineageDialog>
   );
 }
 
-function LineageDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function LineageDialog({
+  onClose,
+  subtitle,
+  children,
+}: {
+  onClose: () => void;
+  subtitle?: string;
+  children: ReactNode;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -69,8 +80,11 @@ function LineageDialog({ onClose, children }: { onClose: () => void; children: R
     >
       <div className="lineage-panel">
         <header className="lineage-header">
-          <h2 id="lineage-title">Evidence lineage</h2>
-          <button className="text-button" type="button" onClick={onClose} autoFocus>
+          <div>
+            <h2 id="lineage-title">Evidence lineage</h2>
+            {subtitle ? <p>{subtitle}</p> : null}
+          </div>
+          <button className="lineage-close-button" type="button" onClick={onClose} autoFocus>
             Close
           </button>
         </header>
@@ -84,16 +98,11 @@ function LineageDialog({ onClose, children }: { onClose: () => void; children: R
 function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
   const attachments = new Map(lineage.attachments.map((item) => [item.id, item]));
   const outcomeItems: Array<[string, string]> = [
-    ["Policy decision", lineage.policy.decision],
+    ["Policy decision", displayValue(lineage.policy.decision)],
+    ["Reason", lineage.policy.reasons.join(" ") || "No reason recorded"],
     ["Outcome", attributionLabel(lineage)],
-    [
-      "Recorded",
-      lineage.historical_outcome.occurred_at
-        ? formatDateTime(lineage.historical_outcome.occurred_at)
-        : "Not recorded",
-    ],
   ];
-  if (lineage.review) outcomeItems.push(["Review status", lineage.review.status]);
+  if (lineage.review) outcomeItems.push(["Review status", displayValue(lineage.review.status)]);
   return (
     <div className="lineage-content">
       {lineage.completeness === "LEGACY_PARTIAL" ? (
@@ -107,36 +116,22 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
 
       <LineageSection title="Why this changed">
         <DefinitionList items={outcomeItems} />
-        <ReasonList reasons={lineage.policy.reasons} />
       </LineageSection>
 
       <LineageSection title="At decision time">
-        <StateComparison
-          current={lineage.transition.historical_current_state}
-          proposed={lineage.transition.historical_proposed_state}
-        />
-        <p className="section-metadata">
-          Transition status: {lineage.transition.status}
-        </p>
+        <DecisionState lineage={lineage} />
         <HistoricalEvidenceValidity evidence={lineage.evidence} />
       </LineageSection>
 
       <LineageSection title="Current state">
-        {lineage.current_state.linked_project_ids.length ? (
-          <div className="current-project-links">
-            <h4>Linked projects</h4>
-            <ul>
-              {lineage.current_state.linked_project_ids.map((projectId) => (
-                <li className="technical-id" key={projectId}>{projectId}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <DefinitionList items={[
+          ["Linked projects", String(lineage.current_state.linked_project_ids.length)],
+        ]} />
         {lineage.current_state.requirements.length ? (
           <ul className="current-state-list">
-            {lineage.current_state.requirements.map((requirement) => (
+            {lineage.current_state.requirements.map((requirement, index) => (
               <li key={requirement.requirement_id}>
-                <span className="technical-id">{requirement.requirement_id}</span>
+                <span>{`Requirement ${index + 1}`}</span>
                 <div className="current-requirement-value">
                   <strong>{requirement.exists ? requirement.state ?? "Unknown" : "Removed"}</strong>
                   {requirement.exists ? (
@@ -160,16 +155,17 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
           <p>{lineage.correspondence.sender_identifier}</p>
         </div>
         {lineage.evidence.length ? (
-          <ul className="evidence-list">
-            {lineage.evidence.map((evidence) => {
+          <ol className="evidence-list">
+            {lineage.evidence.map((evidence, index) => {
               const attachment = evidence.attachment_id
                 ? attachments.get(evidence.attachment_id)
                 : undefined;
               return (
                 <li className="evidence-item" key={evidence.id}>
+                  <span className="evidence-reference">E{index + 1}</span>
                   <blockquote>{evidence.excerpt}</blockquote>
                   <p className="evidence-provenance">
-                    {attachment?.filename ?? evidence.source_type}
+                    {attachment?.filename ?? displayValue(evidence.source_type)}
                     {evidence.page_number ? `, page ${evidence.page_number}` : ""}
                     {evidence.section ? `, ${evidence.section}` : ""}
                   </p>
@@ -181,43 +177,40 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
                 </li>
               );
             })}
-          </ul>
+          </ol>
         ) : (
           <p className="secondary-copy">No evidence excerpt is available.</p>
         )}
       </LineageSection>
 
-      <LineageSection title="AI proposal">
-        <DefinitionList
-          items={[
-            ["Proposal type", lineage.proposal.proposal_type],
-            ["Model", lineage.proposal.model_identifier],
-            ["Prompt version", lineage.proposal.prompt_version],
-          ]}
-        />
-        <details className="technical-details">
-          <summary>Structured proposal</summary>
+      <details className="lineage-secondary-details">
+        <summary>AI proposal</summary>
+        <div className="lineage-secondary-content">
+          <DefinitionList items={[
+              ["Proposal type", lineage.proposal.proposal_type],
+              ["Model", lineage.proposal.model_identifier],
+              ["Prompt version", lineage.proposal.prompt_version],
+            ]} />
+          <h4>Structured proposal</h4>
           <pre>{JSON.stringify(lineage.proposal.structured_output, null, 2)}</pre>
-        </details>
-      </LineageSection>
+        </div>
+      </details>
 
-      <LineageSection title="Policy details">
-        <DefinitionList
-          items={[
+      <details className="lineage-secondary-details">
+        <summary>Policy technical detail</summary>
+        <div className="lineage-secondary-content">
+          <DefinitionList items={[
             ["Policy version", lineage.policy.policy_version],
             ["Decision", lineage.policy.decision],
-          ]}
-        />
-        <ReasonList reasons={lineage.policy.reasons} />
-        <details className="technical-details">
-          <summary>Rule identifiers</summary>
+          ]} />
+          <h4>Rule identifiers</h4>
           <ul>
             {lineage.policy.triggered_rule_ids.map((rule) => (
               <li className="technical-id" key={rule}>{rule}</li>
             ))}
           </ul>
-        </details>
-      </LineageSection>
+        </div>
+      </details>
     </div>
   );
 }
@@ -244,30 +237,46 @@ function DefinitionList({ items }: { items: Array<[string, string]> }) {
   );
 }
 
-function ReasonList({ reasons }: { reasons: string[] }) {
-  if (!reasons.length) return null;
-  return <ul className="reason-list">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>;
+function DecisionState({ lineage }: { lineage: EvidenceLineage }) {
+  if (lineage.transition.requirement_effects.length) {
+    return <div className="decision-state-records">{lineage.transition.requirement_effects.map((effect, index) => (
+      <div className="decision-state-record" key={effect.requirement_id}>
+        {lineage.transition.requirement_effects.length > 1 ? <h4>{`Requirement ${index + 1}`}</h4> : null}
+        <table className="comparison-table"><thead><tr><th>Field</th><th>Historical</th><th>Proposed</th></tr></thead><tbody>
+          <tr><th>State</th><td>{effect.current_state}</td><td>{effect.proposed_state}</td></tr>
+          {(effect.current_expected_date || effect.proposed_expected_date) ? <tr><th>Expected date</th><td>{formatDateOnly(effect.current_expected_date)}</td><td>{formatDateOnly(effect.proposed_expected_date)}</td></tr> : null}
+          <tr><th>Transition</th><td colSpan={2}>{displayValue(lineage.transition.status)}</td></tr>
+        </tbody></table>
+      </div>
+    ))}</div>;
+  }
+  const current = businessStateRows(lineage.transition.historical_current_state);
+  const proposed = businessStateRows(lineage.transition.historical_proposed_state);
+  const labels = Array.from(new Set([...current.keys(), ...proposed.keys()]));
+  return <table className="comparison-table"><thead><tr><th>Field</th><th>Historical</th><th>Proposed</th></tr></thead><tbody>
+    {labels.map((label) => <tr key={label}><th>{label}</th><td>{current.get(label) ?? "Not recorded"}</td><td>{proposed.get(label) ?? "Not recorded"}</td></tr>)}
+    <tr><th>Transition</th><td colSpan={2}>{displayValue(lineage.transition.status)}</td></tr>
+  </tbody></table>;
 }
 
-function StateComparison({
-  current,
-  proposed,
-}: {
-  current: Record<string, JsonValue>;
-  proposed: Record<string, JsonValue>;
-}) {
-  return (
-    <div className="state-comparison">
-      <div>
-        <h4>Observed</h4>
-        <pre>{JSON.stringify(current, null, 2)}</pre>
-      </div>
-      <div>
-        <h4>Proposed</h4>
-        <pre>{JSON.stringify(proposed, null, 2)}</pre>
-      </div>
-    </div>
-  );
+function businessStateRows(state: Record<string, JsonValue>): Map<string, string> {
+  return new Map(Object.entries(state).map(([key, value]) => [humanizeKey(key), formatStateValue(key, value)]));
+}
+
+function humanizeKey(value: string): string {
+  return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function formatStateValue(key: string, value: JsonValue): string {
+  if (value === null) return "Not set";
+  if (Array.isArray(value)) {
+    if (key.toLowerCase().includes("id")) return `${value.length} recorded`;
+    return value.map((item) => formatStateValue(key, item)).join(", ");
+  }
+  if (typeof value === "object") return "Recorded state";
+  if (key.toLowerCase().includes("id")) return "Recorded";
+  if (typeof value === "string" && key.toLowerCase().includes("date")) return formatDateOnly(value);
+  return String(value);
 }
 
 function HistoricalEvidenceValidity({ evidence }: { evidence: LineageEvidence[] }) {
@@ -276,11 +285,11 @@ function HistoricalEvidenceValidity({ evidence }: { evidence: LineageEvidence[] 
     <ul className="validity-list historical-validity-list">
       {evidence.map((item) => (
         <li key={item.id}>
-          <span>{item.source_type}</span>
+          <span>{displayValue(item.source_type)}</span>
           <dl className="validity-history">
-            <div><dt>At proposal</dt><dd>{item.validity_at_proposal}</dd></div>
-            <div><dt>At policy</dt><dd>{item.validity_at_policy}</dd></div>
-            <div><dt>At outcome</dt><dd>{item.validity_at_outcome ?? "Not recorded"}</dd></div>
+            <div><dt>At proposal</dt><dd>{displayValue(item.validity_at_proposal)}</dd></div>
+            <div><dt>At policy</dt><dd>{displayValue(item.validity_at_policy)}</dd></div>
+            <div><dt>At outcome</dt><dd>{item.validity_at_outcome ? displayValue(item.validity_at_outcome) : "Not recorded"}</dd></div>
           </dl>
         </li>
       ))}
@@ -294,8 +303,8 @@ function CurrentEvidenceValidity({ evidence }: { evidence: LineageEvidence[] }) 
     <ul className="validity-list">
       {evidence.map((item) => (
         <li key={item.id}>
-          <span>{item.source_type}</span>
-          <strong>{item.current_validity}</strong>
+          <span>{displayValue(item.source_type)}</span>
+          <strong>{displayValue(item.current_validity)}</strong>
         </li>
       ))}
     </ul>
@@ -312,6 +321,50 @@ function attributionLabel(lineage: EvidenceLineage): string {
   }
   if (lineage.historical_outcome.attribution === "HUMAN") return "Human review";
   return "No final outcome recorded";
+}
+
+function lineageSubtitle(lineage: EvidenceLineage): string {
+  const effect = lineage.transition.requirement_effects[0];
+  if (effect) return `Requirement change: ${effect.current_state} to ${effect.proposed_state}`;
+  const historicalState = stateValue(lineage.transition.historical_current_state);
+  const proposedState = stateValue(lineage.transition.historical_proposed_state);
+  if (historicalState && proposedState && historicalState !== proposedState) {
+    return `Requirement change: ${historicalState} to ${proposedState}`;
+  }
+  return lineage.transition.affected_entity_type === "CORRESPONDENCE_PROJECT_LINK"
+    ? "Project association change"
+    : "Recorded state change";
+}
+
+const DISPLAY_VALUES: Record<string, string> = {
+  ALLOW_AUTO_ACTION: "Allowed",
+  REVIEW_REQUIRED: "Review required",
+  REJECT_PROPOSAL: "Rejected",
+  NO_MATCH: "No match",
+  ATTACHMENT_TEXT: "Attachment text",
+  BODY: "Message body",
+  SUBJECT: "Subject",
+  VALID: "Valid",
+  INVALIDATED: "Invalidated",
+  PENDING: "Pending",
+  APPLIED: "Applied",
+  REVIEW: "Review",
+  REJECTED: "Rejected",
+};
+
+function displayValue(value: string): string {
+  return DISPLAY_VALUES[value] ?? value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function stateValue(state: Record<string, JsonValue>): string | null {
+  for (const key of ["requirement_state", "state"]) {
+    const value = state[key];
+    if (typeof value === "string" && value.length) return value;
+  }
+  return null;
 }
 
 function LineageLoading() {

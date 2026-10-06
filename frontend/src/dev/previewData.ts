@@ -35,6 +35,7 @@ export const previewProjects: ProjectSummary[] = [
 export const previewWorkspaces: Record<string, ProjectWorkspace> = {
   "preview-project-104": {
     project: previewProjects[0],
+    contacts: [],
     identifiers: [
       {
         id: "preview-identifier-repo",
@@ -90,6 +91,7 @@ export const previewWorkspaces: Record<string, ProjectWorkspace> = {
   },
   "preview-project-221": {
     project: previewProjects[1],
+    contacts: [],
     identifiers: [
       {
         id: "preview-identifier-migration",
@@ -121,6 +123,7 @@ export const previewWorkspaces: Record<string, ProjectWorkspace> = {
   },
   "preview-project-319": {
     project: previewProjects[2],
+    contacts: [],
     identifiers: [],
     requirements: [],
   },

@@ -17,6 +17,7 @@ export const project: ProjectSummary = {
 
 export const workspace: ProjectWorkspace = {
   project,
+  contacts: [],
   identifiers: [
     {
       id: "identifier-1",

@@ -25,7 +25,7 @@ describe("ProjectsPage", () => {
     renderPage();
     expect(screen.getByLabelText("Loading")).toBeInTheDocument();
     resolveProjects([]);
-    await screen.findByText("No projects have been added yet.");
+    await screen.findByText("No projects available.");
   });
 
   it("renders the real project fields returned by the API", async () => {
@@ -33,18 +33,18 @@ describe("ProjectsPage", () => {
     renderPage();
     expect(await screen.findByText("TW-101")).toBeInTheDocument();
     expect(screen.getByText("Release Controls")).toBeInTheDocument();
-    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /TW-101.*Release Controls.*ACTIVE/i })).toHaveAttribute(
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Release Controls.*TW-101.*Active/i })).toHaveAttribute(
       "href",
       "/projects/project-1",
     );
   });
 
-  it("renders an honest empty state without an unavailable action", async () => {
+  it("renders first-run setup direction with the real creation route", async () => {
     getProjects.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText("No projects have been added yet.")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(await screen.findByText("No projects available.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New project" })).toHaveAttribute("href", "/projects/new");
   });
 
   it("renders a specific API failure with retry", () => {

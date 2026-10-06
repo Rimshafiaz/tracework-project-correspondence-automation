@@ -18,8 +18,8 @@ export function ProjectsPage() {
   return (
     <section aria-labelledby="projects-title">
       <header className="page-header">
-        <h1 id="projects-title">Projects</h1>
-        <p>Project records available to Tracework</p>
+        <div><h1 id="projects-title">Projects</h1><p>Project records used to resolve incoming correspondence.</p></div>
+        <Link className="primary-button button-link" to="/projects/new">New project</Link>
       </header>
 
       {projects.isPending ? <TableLoading /> : null}
@@ -27,7 +27,7 @@ export function ProjectsPage() {
         <ProjectsError error={projects.error} retry={() => void projects.refetch()} />
       ) : null}
       {projects.data?.length === 0 ? (
-        <EmptyState message="No projects have been added yet." />
+        <div className="compact-empty"><EmptyState message="No projects available." /><p>Create a project to establish its identity and initial requirements.</p></div>
       ) : null}
       {projects.data && projects.data.length > 0 ? (
         <ProjectDirectory projects={projects.data} />
@@ -46,19 +46,19 @@ export function ProjectDirectory({
   return (
     <div className="record-table project-table">
       <div className="record-table-header" aria-hidden="true">
-        <span>Code</span><span>Project</span><span>Status</span>
+        <span>Project</span><span>Status</span>
       </div>
       <ul className="record-table-body">
         {projects.map((project) => (
           <li key={project.id}>
             <Link className="project-row" to={`${basePath}/${project.id}`}>
-              <span className="project-code">{project.project_code}</span>
-              <span className="project-name">{project.name}</span>
+              <span className="project-record"><span className="project-name">{project.name}</span><span className="project-code">{project.project_code}</span></span>
               <StatusBadge status={project.status} />
             </Link>
           </li>
         ))}
       </ul>
+      <footer className="register-footer"><span>{projects.length} {projects.length === 1 ? "project record" : "project records"}</span><span>Open a project to view requirements and correspondence history.</span></footer>
     </div>
   );
 }

@@ -29,10 +29,209 @@ export interface ProjectRequirement {
   updated_at: string;
 }
 
+export interface ProjectContact {
+  id: string;
+  email: string;
+  display_name: string;
+  role: string | null;
+  is_active: boolean;
+}
+
 export interface ProjectWorkspace {
   project: ProjectSummary;
   identifiers: ProjectIdentifier[];
+  contacts: ProjectContact[];
   requirements: ProjectRequirement[];
+}
+
+export interface ProjectSetupIdentifierInput {
+  identifier_type: string;
+  display_value: string;
+}
+
+export interface ProjectSetupContactInput {
+  email: string;
+  display_name: string;
+  role?: string | null;
+}
+
+export interface ProjectSetupRequirementInput {
+  name: string;
+  description?: string | null;
+  expected_date?: string | null;
+}
+
+export interface ProjectSetupRequest {
+  name: string;
+  identifiers: ProjectSetupIdentifierInput[];
+  contacts: ProjectSetupContactInput[];
+  requirements: ProjectSetupRequirementInput[];
+}
+
+export type ReviewType =
+  | "PROJECT_RESOLUTION"
+  | "REQUIREMENT_CHANGE"
+  | "NEW_REQUIREMENT";
+export type ReviewStatus = "PENDING" | "APPROVED" | "CORRECTED" | "REJECTED";
+export type ReviewAllowedAction = "APPROVE" | "ASSIGN_OR_CORRECT" | "REJECT";
+
+export interface ReviewQueueSummary {
+  review_item_id: string;
+  correspondence_event_id: string;
+  review_type: ReviewType;
+  status: ReviewStatus;
+  review_reason: string;
+  created_at: string;
+  resolved_at: string | null;
+  allowed_actions: ReviewAllowedAction[];
+}
+
+export interface ReviewCorrespondence {
+  correspondence_event_id: string;
+  source: string;
+  sender_identifier: string;
+  sender_email: string | null;
+  sender_name: string | null;
+  subject: string | null;
+  body: string;
+  received_at: string;
+}
+
+export interface CandidateSignal {
+  signal_type: string;
+  matched_value: string;
+  source: string;
+  identifier_type: string | null;
+  evidence_item_id?: string | null;
+  exact: boolean;
+  verified: boolean;
+  previously_approved: boolean;
+}
+
+export interface ReviewProjectCandidate {
+  project_id: string;
+  project_code: string;
+  project_name: string;
+  project_status: ProjectStatus;
+  signals: CandidateSignal[];
+}
+
+export interface PolicySnapshot {
+  policy_version: string;
+  decision: string;
+  triggered_rule_ids: string[];
+  reasons: string[];
+}
+
+export interface ProjectResolutionReviewDetail {
+  review_type: "PROJECT_RESOLUTION";
+  allowed_actions: ReviewAllowedAction[];
+  detail: {
+    review: Omit<ReviewQueueSummary, "review_type" | "allowed_actions">;
+    state_transition_id: string;
+    proposal_id: string;
+    policy_evaluation_id: string;
+    correspondence: ReviewCorrespondence;
+    preview: {
+      resolver_status: string;
+      current_project_ids: string[];
+      proposed_project_ids: string[];
+      alternative_project_ids: string[];
+      valid_evidence_ids: string[];
+      invalidated_evidence_ids: string[];
+      policy: PolicySnapshot;
+      disposition: string;
+      requires_manual_project_assignment: boolean;
+    };
+    candidate_set: { candidates: ReviewProjectCandidate[] };
+    resolution: {
+      status: string;
+      project_ids: string[];
+      evidence: Array<{ project_id: string; interpretation: string }>;
+      conflicts: Array<{ description: string }>;
+      concerns: string[];
+    };
+    evidence: Array<{
+      evidence_item_id: string;
+      attachment_id: string | null;
+      source_type: string;
+      page_number: number | null;
+      section: string | null;
+      excerpt: string;
+      validity: EvidenceValidity;
+      invalidation_reason: string | null;
+    }>;
+  };
+}
+
+export interface RequirementReviewDetail {
+  review_type: "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT";
+  allowed_actions: [];
+  review: ReviewQueueSummary;
+  correspondence: ReviewCorrespondence;
+  handoff: {
+    project_id: string;
+    state_transition_id: string;
+    reconciliation: {
+      existing_impacts: Array<{
+        requirement_id: string;
+        disposition: "NO_CHANGE" | "UPDATE_PROPOSED";
+        proposed_state: RequirementState | null;
+        proposed_expected_date: string | null;
+        interpretation: string;
+      }>;
+      new_requirements: Array<{
+        name: string;
+        description: string | null;
+        expected_date: string | null;
+        interpretation: string;
+      }>;
+      concerns: Array<{ concern_type: string; description: string }>;
+      conflicts: Array<{ description: string }>;
+    };
+    m11_snapshot: {
+      requirements: Array<{
+        requirement_id: string;
+        name: string;
+        description: string | null;
+        current_state: RequirementState;
+        expected_date: string | null;
+      }>;
+    };
+    current_requirements: Array<{
+      requirement_id: string;
+      name: string;
+      description: string | null;
+      state: RequirementState;
+      expected_date: string | null;
+    }>;
+    transition_preview: {
+      policy: PolicySnapshot;
+      disposition: string;
+      requirement_effects: RequirementTransitionEffect[];
+    };
+    evidence: Array<{
+      evidence_item_id: string;
+      requirement_id: string | null;
+      source_type: string;
+      page_number: number | null;
+      section: string | null;
+      excerpt: string;
+      validity: EvidenceValidity;
+      invalidation_reason: string | null;
+    }>;
+  };
+}
+
+export type ReviewReadDetail = ProjectResolutionReviewDetail | RequirementReviewDetail;
+
+export interface ReviewDecisionResponse {
+  review_item_id: string;
+  status: ReviewStatus;
+  action: string;
+  project_ids: string[];
+  project_link_ids: string[];
+  idempotent_replay: boolean;
 }
 
 export type ProjectActivityType =

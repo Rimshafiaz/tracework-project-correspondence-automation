@@ -23,9 +23,10 @@ describe("LoginPage", () => {
   it("presents the real email and password sign-in form", () => {
     useAuth.mockReturnValue({ session: null, isLoading: false, signIn: vi.fn() });
     renderLogin();
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
-    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sign in to Tracework" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveAttribute("placeholder", "operator@example.com");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("placeholder", "Enter password");
+    expect(screen.getByText("Gmail and Drive authorization are configured separately from this sign-in.")).toBeInTheDocument();
   });
 
   it("submits credentials through the auth boundary", async () => {

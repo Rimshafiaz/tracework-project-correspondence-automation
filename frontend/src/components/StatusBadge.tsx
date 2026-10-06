@@ -5,5 +5,8 @@ export function StatusBadge({
 }: {
   status: ProjectStatus | RequirementState;
 }) {
-  return <span className={`status status-${status.toLowerCase()}`}>{status}</span>;
+  const label = status === "ACTIVE" || status === "CLOSED"
+    ? `${status[0]}${status.slice(1).toLowerCase()}`
+    : status;
+  return <span className={`status status-${status.toLowerCase()}`}>{label}</span>;
 }

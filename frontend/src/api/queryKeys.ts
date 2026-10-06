@@ -6,4 +6,6 @@ export const queryKeys = {
     ["projects", projectId, "activity"] as const,
   transitionLineage: (transitionId: string) =>
     ["transitions", transitionId, "lineage"] as const,
+  reviews: ["reviews"] as const,
+  review: (reviewId: string) => ["reviews", reviewId] as const,
 };

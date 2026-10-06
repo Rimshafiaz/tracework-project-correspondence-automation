@@ -94,34 +94,26 @@ export function ProjectWorkspaceView({
   backHref?: string;
   developmentPreviewLineage?: EvidenceLineage;
 }) {
-  const { project, identifiers, requirements } = workspace;
+  const { project, identifiers, contacts, requirements } = workspace;
   const verifiedIdentifiers = identifiers.filter((item) => item.verified);
   return (
     <article>
       <Link className="back-link" to={backHref}>Projects</Link>
       <header className="project-header">
-        <div>
-          <p className="project-code project-code-heading">{project.project_code}</p>
-          <h1>{project.name}</h1>
-        </div>
+        <h1>{project.name}</h1>
+        <span className="project-code project-code-heading">{project.project_code}</span>
         <StatusBadge status={project.status} />
       </header>
 
-      {verifiedIdentifiers.length ? (
-        <dl className="identifier-list">
-          {verifiedIdentifiers.map((identifier) => (
-            <div key={identifier.id}>
-              <dt>{humanizeIdentifierType(identifier.identifier_type)}</dt>
-              <dd>{identifier.display_value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
+      <div className="project-context-register">
+        <section aria-labelledby="identifiers-title"><h2 id="identifiers-title">Verified identifiers</h2>{verifiedIdentifiers.length ? <dl>{verifiedIdentifiers.map((identifier) => <div key={identifier.id}><dt>{humanizeIdentifierType(identifier.identifier_type)}</dt><dd>{identifier.display_value}</dd></div>)}</dl> : <p className="empty-state">No verified identifiers recorded.</p>}</section>
+        <section aria-labelledby="contacts-title"><h2 id="contacts-title">Trusted contacts</h2>{contacts.filter((contact) => contact.is_active).length ? <dl>{contacts.filter((contact) => contact.is_active).map((contact) => <div className="contact-record" key={contact.id}><dt>{contact.display_name}</dt><dd>{contact.role ?? "Not specified"}</dd><dd>{contact.email}</dd></div>)}</dl> : <p className="empty-state">No trusted contacts recorded.</p>}</section>
+      </div>
 
-      <div className="workspace-columns">
+      <div className="workspace-registers">
         <RequirementsLedger requirements={requirements} />
-        <section className="workspace-section activity-rail" aria-labelledby="activity-title">
-          <div className="section-heading-row"><h2 id="activity-title">Project activity</h2></div>
+        <section className="workspace-section history-register" aria-labelledby="activity-title">
+          <div className="section-heading-row"><h2 id="activity-title">Project history</h2></div>
           {activityLoading ? <TableLoading rows={3} /> : null}
           {activityError ? (
             <ErrorState

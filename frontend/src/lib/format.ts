@@ -28,3 +28,11 @@ export function humanizeIdentifierType(value: string): string {
     })
     .join(" ");
 }
+
+export function reviewTypeLabel(
+  type: "PROJECT_RESOLUTION" | "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT",
+): string {
+  if (type === "PROJECT_RESOLUTION") return "Project resolution";
+  if (type === "NEW_REQUIREMENT") return "New requirement";
+  return "Requirement change";
+}

@@ -34,11 +34,16 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <div className="login-content">
+      <section className="login-brand-panel" aria-label="Tracework">
         <p className="login-wordmark">Tracework</p>
-        <section className="login-panel" aria-labelledby="login-title">
-          <p className="login-kicker">Authorized access only</p>
-          <h1 id="login-title">Sign in</h1>
+        <div className="login-statement"><h1>Correspondence becomes evidence-backed project state.</h1><p>Tracework interprets incoming project communication, preserves the evidence, and holds unsafe changes for operator review.</p></div>
+        <p className="login-footnote">Internal operator workspace</p>
+      </section>
+      <section className="login-form-panel" aria-labelledby="login-title">
+        <div className="login-panel">
+          <p className="login-kicker">Operator access</p>
+          <h2 id="login-title">Sign in to Tracework</h2>
+          <p className="login-subtitle">Use the approved account provisioned for this workspace.</p>
 
           <form className="login-form" onSubmit={handleSubmit}>
           <label htmlFor="email">Email</label>
@@ -47,7 +52,7 @@ export function LoginPage() {
             name="email"
             type="email"
             autoComplete="email"
-            placeholder="name@example.com"
+            placeholder="operator@example.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
@@ -59,6 +64,7 @@ export function LoginPage() {
             name="password"
             type="password"
             autoComplete="current-password"
+            placeholder="Enter password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
@@ -74,8 +80,9 @@ export function LoginPage() {
             {isSubmitting ? "Signing in" : "Sign in"}
           </button>
           </form>
-        </section>
-      </div>
+          <div className="login-access-note"><strong>No public signup.</strong><span>Operator accounts are provisioned outside Tracework.</span><span>Gmail and Drive authorization are configured separately from this sign-in.</span></div>
+        </div>
+      </section>
     </main>
   );
 }

@@ -14,18 +14,14 @@ export function ProjectActivityList({
   }
 
   return (
-    <ol className="activity-list">
+    <div className="record-table history-table">
+      <div className="record-table-header" aria-hidden="true"><span>Time</span><span>Event</span><span>Actor</span><span>Evidence</span></div>
+    <ol className="record-table-body activity-list">
       {events.map((event) => (
         <li className="activity-item" key={event.event_id}>
-          <div className="activity-content">
-            <p className="activity-summary">{event.summary}</p>
-            <div className="activity-metadata">
-              <time dateTime={event.occurred_at}>
-                {formatDateTime(event.occurred_at)}
-              </time>
-              <span>{attributionLabel(event)}</span>
-            </div>
-          </div>
+          <time dateTime={event.occurred_at}>{formatDateTime(event.occurred_at)}</time>
+          <p className="activity-summary">{event.summary}</p>
+          <span className="activity-attribution">{attributionLabel(event)}</span>
           {event.state_transition_id ? (
             <button
               className="text-button activity-action"
@@ -34,10 +30,11 @@ export function ProjectActivityList({
             >
               View evidence
             </button>
-          ) : null}
+          ) : <span />}
         </li>
       ))}
     </ol>
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@ import { apiRequest } from "./client";
 import type {
   EvidenceLineage,
   ProjectActivity,
+  ProjectSetupRequest,
   ProjectSummary,
   ProjectWorkspace,
 } from "./types";
@@ -23,3 +24,10 @@ export const getTransitionLineage = (
   apiRequest<EvidenceLineage>(
     `/transitions/${encodeURIComponent(transitionId)}/lineage`,
   );
+
+export const createProject = (request: ProjectSetupRequest): Promise<ProjectWorkspace> =>
+  apiRequest<ProjectWorkspace>("/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
