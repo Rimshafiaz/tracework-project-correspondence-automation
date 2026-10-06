@@ -104,6 +104,23 @@ class ProjectIdentifierRepository:
         )
         return [tuple(row) for row in self.session.execute(statement)]
 
+    def list_all_verified_with_projects(
+        self,
+    ) -> Sequence[tuple[ProjectIdentifier, Project]]:
+        statement = (
+            select(ProjectIdentifier, Project)
+            .join(Project, Project.id == ProjectIdentifier.project_id)
+            .where(ProjectIdentifier.verified.is_(True))
+            .order_by(
+                Project.project_code,
+                Project.id,
+                ProjectIdentifier.identifier_type,
+                ProjectIdentifier.normalized_value,
+                ProjectIdentifier.id,
+            )
+        )
+        return [tuple(row) for row in self.session.execute(statement)]
+
     def update(
         self,
         identifier: ProjectIdentifier,

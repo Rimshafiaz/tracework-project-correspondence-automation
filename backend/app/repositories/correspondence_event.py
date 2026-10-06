@@ -47,6 +47,13 @@ class CorrespondenceEventRepository:
     def get(self, event_id: UUID) -> CorrespondenceEvent | None:
         return self.session.get(CorrespondenceEvent, event_id)
 
+    def get_for_update(self, event_id: UUID) -> CorrespondenceEvent | None:
+        return self.session.scalar(
+            select(CorrespondenceEvent)
+            .where(CorrespondenceEvent.id == event_id)
+            .with_for_update()
+        )
+
     def get_by_external_identity(
         self, *, source: str, external_event_id: str
     ) -> CorrespondenceEvent | None:

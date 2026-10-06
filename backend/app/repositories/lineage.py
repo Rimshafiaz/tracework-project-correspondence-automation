@@ -30,6 +30,21 @@ class LineageRepository:
             .with_for_update()
         )
 
+    def list_proposals_for_event(
+        self,
+        *,
+        correspondence_event_id: UUID,
+        proposal_type: ProposalType,
+    ) -> Sequence[AIProposal]:
+        return self.session.scalars(
+            select(AIProposal)
+            .where(
+                AIProposal.correspondence_event_id == correspondence_event_id,
+                AIProposal.proposal_type == proposal_type,
+            )
+            .order_by(AIProposal.created_at, AIProposal.id)
+        ).all()
+
     def list_proposal_evidence(self, proposal_id: UUID) -> Sequence[EvidenceItem]:
         return self.session.scalars(
             select(EvidenceItem)
