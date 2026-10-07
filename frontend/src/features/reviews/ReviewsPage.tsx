@@ -21,7 +21,7 @@ export function ReviewsPage() {
   return (
     <ReviewPageFrame pendingCount={reviews.data.length}>
       <ReviewRegister title="Needs a decision" description="Project-resolution reviews can be approved, corrected, or rejected." reviews={actionable} empty="No reviews currently need a decision." />
-      <ReviewRegister title="Inspection only" description="Requirement reviews are readable here but have no mutation actions yet." reviews={inspection} empty="No inspection-only reviews are pending." />
+      <ReviewRegister title="Inspection only" description="Requirement and document revision reviews are readable here but have no mutation actions." reviews={inspection} empty="No inspection-only reviews are pending." />
     </ReviewPageFrame>
   );
 }

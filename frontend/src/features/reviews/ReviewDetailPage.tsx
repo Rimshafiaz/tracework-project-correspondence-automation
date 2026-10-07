@@ -6,7 +6,7 @@ import { ApiError } from "../../api/client";
 import { getProjects } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
 import { approveProjectResolution, assignProjectResolution, getReview, rejectProjectResolution } from "../../api/reviews";
-import type { ProjectResolutionReviewDetail, RequirementReviewDetail, ReviewProjectCandidate } from "../../api/types";
+import type { DocumentRevisionReviewDetail, ProjectResolutionReviewDetail, RequirementReviewDetail, ReviewCorrespondence, ReviewProjectCandidate } from "../../api/types";
 import { ErrorState } from "../../components/ErrorState";
 import { TableLoading } from "../../components/LoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -21,9 +21,9 @@ export function ReviewDetailPage() {
     const missing = review.error instanceof ApiError && review.error.kind === "not_found";
     return <ErrorState title={missing ? "Review not found" : "Review could not be loaded"} message={missing ? "This review is not available." : "Stored review history could not be loaded."} onRetry={missing ? undefined : () => void review.refetch()} />;
   }
-  return review.data.review_type === "PROJECT_RESOLUTION"
-    ? <ProjectResolutionReview detail={review.data} />
-    : <RequirementReview detail={review.data} />;
+  if (review.data.review_type === "PROJECT_RESOLUTION") return <ProjectResolutionReview detail={review.data} />;
+  if (review.data.review_type === "DOCUMENT_REVISION") return <DocumentRevisionReview detail={review.data} />;
+  return <RequirementReview detail={review.data} />;
 }
 
 function ProjectResolutionReview({ detail }: { detail: ProjectResolutionReviewDetail }) {
@@ -131,10 +131,54 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
   );
 }
 
+function DocumentRevisionReview({ detail }: { detail: DocumentRevisionReviewDetail }) {
+  const incoming = detail.incoming_document;
+  return (
+    <article className="review-detail requirement-review-detail">
+      <Link className="back-link" to="/reviews">Reviews</Link>
+      <header className="requirement-review-heading">
+        <div>
+          <h1>Document revision review</h1>
+          <p>Revision state held for inspection. The current document has not been replaced.</p>
+        </div>
+        <p>{reviewTypeLabel(detail.review_type)}<br />{formatDateTime(detail.review.created_at)}</p>
+      </header>
+      <div className="requirement-review-surface">
+        <RequirementReviewSection title="Source">
+          <RequirementCorrespondenceRecord correspondence={detail.correspondence} />
+          <dl className="review-basis-record">
+            <div><dt>Attachment</dt><dd>{detail.attachment.filename}</dd></div>
+            <div><dt>Media type</dt><dd>{detail.attachment.mime_type}</dd></div>
+          </dl>
+        </RequirementReviewSection>
+        <RequirementReviewSection title="Document revision">
+          <dl className="review-basis-record">
+            <div><dt>Project</dt><dd>{incoming.project_code} {incoming.project_name}</dd></div>
+            <div><dt>File</dt><dd>{incoming.filename}</dd></div>
+            <div><dt>Category</dt><dd>{incoming.category}</dd></div>
+            <div><dt>Document family</dt><dd>{incoming.document_family_key ?? "Not established"}</dd></div>
+            <div><dt>Incoming revision</dt><dd>{incoming.revision_normalized ? `${incoming.revision_normalized}${incoming.revision_order === null ? "" : ` (order ${incoming.revision_order})`}` : incoming.revision_label ?? "Not established"}</dd></div>
+            <div><dt>Incoming content hash</dt><dd><span className="technical-id">{incoming.content_hash}</span></dd></div>
+            {detail.current_document ? <><div><dt>Current revision</dt><dd>{detail.current_document.revision_normalized}</dd></div><div><dt>Current content hash</dt><dd><span className="technical-id">{detail.current_document.content_hash}</span></dd></div></> : null}
+          </dl>
+        </RequirementReviewSection>
+        <RequirementReviewSection title="Review basis">
+          <dl className="review-basis-record">
+            <div><dt>Outcome</dt><dd>Review required</dd></div>
+            <div><dt>Reason</dt><dd>{detail.reasons.join(" ")}</dd></div>
+            <div><dt>Transition</dt><dd>Previewed (review)</dd></div>
+            <div><dt>Technical definition</dt><dd><span className="technical-id">{detail.policy_version}</span>{detail.triggered_rule_ids.map((id) => <span className="technical-id" key={id}>{id}</span>)}</dd></div>
+          </dl>
+        </RequirementReviewSection>
+      </div>
+    </article>
+  );
+}
+
 function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="review-record-section"><h2>{title}</h2>{children}</section>; }
 function RequirementReviewSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="requirement-review-section"><h2>{title}</h2>{children}</section>; }
 function CorrespondenceRecord({ correspondence }: { correspondence: ProjectResolutionReviewDetail["detail"]["correspondence"] }) { return <div className="correspondence-record"><dl><div><dt>From</dt><dd>{correspondence.sender_name ?? correspondence.sender_email ?? correspondence.sender_identifier}</dd></div><div><dt>Received</dt><dd>{formatDateTime(correspondence.received_at)}</dd></div><div><dt>Subject</dt><dd>{correspondence.subject ?? "No subject"}</dd></div></dl><p>{correspondence.body}</p></div>; }
-function RequirementCorrespondenceRecord({ correspondence }: { correspondence: RequirementReviewDetail["correspondence"] }) { return <div className="requirement-correspondence-record"><dl><div><dt>From</dt><dd>{correspondence.sender_name ?? correspondence.sender_email ?? correspondence.sender_identifier}</dd></div><div><dt>Subject</dt><dd>{correspondence.subject ?? "No subject"}</dd></div><div><dt>Received</dt><dd>{formatDateTime(correspondence.received_at)}</dd></div></dl><p>{correspondence.body}</p></div>; }
+function RequirementCorrespondenceRecord({ correspondence }: { correspondence: ReviewCorrespondence }) { return <div className="requirement-correspondence-record"><dl><div><dt>From</dt><dd>{correspondence.sender_name ?? correspondence.sender_email ?? correspondence.sender_identifier}</dd></div><div><dt>Subject</dt><dd>{correspondence.subject ?? "No subject"}</dd></div><div><dt>Received</dt><dd>{formatDateTime(correspondence.received_at)}</dd></div></dl><p>{correspondence.body}</p></div>; }
 function EvidenceReferenceTable({ evidence }: { evidence: ProjectResolutionReviewDetail["detail"]["evidence"] }) { return evidence.length ? <div className="evidence-key"><h3>Evidence key</h3><ol>{evidence.map((item, index) => <li key={item.evidence_item_id}><span className="evidence-reference">E{index + 1}</span><div><strong>{humanizeSignalType(item.source_type)}</strong><blockquote>{item.excerpt}</blockquote>{item.page_number || item.section ? <small>{item.page_number ? `Page ${item.page_number}` : ""}{item.page_number && item.section ? ", " : ""}{item.section ?? ""}</small> : null}</div></li>)}</ol></div> : null; }
 function RequirementEvidenceTable({ evidence }: { evidence: RequirementReviewDetail["handoff"]["evidence"] }) { return evidence.length ? <div className="requirement-evidence-table"><div className="requirement-evidence-header"><span>Source</span><span>Exact excerpt</span><span>Validity</span></div>{evidence.map((item) => <div className="requirement-evidence-row" key={item.evidence_item_id}><div>{humanizeSignalType(item.source_type)}{item.page_number || item.section ? <small>{item.page_number ? `Page ${item.page_number}` : ""}{item.page_number && item.section ? ", " : ""}{item.section ?? ""}</small> : null}</div><blockquote>{item.excerpt}</blockquote><strong>{item.validity}</strong></div>)}</div> : <p className="empty-state">No evidence excerpts are available.</p>; }
 function CandidateRecord({ candidate, evidenceLabels, interpretation, selected }: { candidate: ReviewProjectCandidate; evidenceLabels: Map<string, string>; interpretation?: string; selected: boolean }) { return <div className="candidate-record"><div><span className="project-code">{candidate.project_code}</span><strong>{candidate.project_name}</strong></div><ul>{candidate.signals.map((signal, index) => <li key={`${signal.signal_type}-${index}`}>{signal.evidence_item_id && evidenceLabels.get(signal.evidence_item_id) ? <span className="evidence-reference">{evidenceLabels.get(signal.evidence_item_id)}</span> : null}<span>{humanizeSignalType(signal.signal_type)}: {signal.matched_value}</span></li>)}</ul><p><strong>{selected ? "Proposed." : "Alternative."}</strong> {interpretation ?? "No resolver interpretation recorded."}</p></div>; }

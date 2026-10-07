@@ -21,6 +21,9 @@ class AttachmentRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def get(self, attachment_id: UUID) -> Attachment | None:
+        return self.session.get(Attachment, attachment_id)
+
     def create(
         self,
         *,

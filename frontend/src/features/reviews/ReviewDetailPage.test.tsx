@@ -133,4 +133,62 @@ describe("ReviewDetailPage", () => {
     expect(screen.getAllByText("E1").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /regenerate|retry|comment/i })).not.toBeInTheDocument();
   });
+
+  it("renders a document revision review without mutation controls", async () => {
+    api.getReview.mockResolvedValue({
+      review_type: "DOCUMENT_REVISION",
+      allowed_actions: [],
+      review: {
+        review_item_id: "review-1",
+        correspondence_event_id: "correspondence-1",
+        review_type: "DOCUMENT_REVISION",
+        status: "PENDING",
+        review_reason: "The same revision label exists with different content.",
+        created_at: "2026-10-05T09:05:00Z",
+        resolved_at: null,
+        allowed_actions: [],
+      },
+      correspondence,
+      attachment: {
+        attachment_id: "attachment-1",
+        filename: "Structural Plan R4.pdf",
+        mime_type: "application/pdf",
+        content_hash: "b".repeat(64),
+      },
+      state_transition_id: "transition-1",
+      transition_status: "PREVIEWED",
+      disposition: "REVIEW",
+      incoming_document: {
+        document_id: "document-2",
+        source_attachment_id: "attachment-1",
+        filename: "Structural Plan R4.pdf",
+        project_id: "project-1",
+        project_code: "TW-001",
+        project_name: "Test Project",
+        category: "Documents",
+        document_family_key: "structural plan",
+        revision_label: "R4",
+        revision_normalized: "REV-4",
+        revision_order: 4,
+        content_hash: "b".repeat(64),
+      },
+      current_document: {
+        document_id: "document-1",
+        revision_normalized: "REV-4",
+        revision_order: 4,
+        content_hash: "a".repeat(64),
+      },
+      outcome: "REVIEW_REQUIRED",
+      reasons: ["The same revision label exists with different content."],
+      policy_version: "document-revision/1",
+      triggered_rule_ids: ["DREV-200-SAME-REVISION-DIFFERENT-CONTENT-REVIEW"],
+    });
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Document revision review" })).toBeInTheDocument();
+    expect(screen.getByText("REV-4 (order 4)")).toBeInTheDocument();
+    expect(screen.getByText("The same revision label exists with different content.")).toBeInTheDocument();
+    expect(screen.getByText("document-revision/1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve|reject|assign|correct/i })).not.toBeInTheDocument();
+  });
 });

@@ -30,9 +30,10 @@ export function humanizeIdentifierType(value: string): string {
 }
 
 export function reviewTypeLabel(
-  type: "PROJECT_RESOLUTION" | "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT",
+  type: "PROJECT_RESOLUTION" | "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT" | "DOCUMENT_REVISION",
 ): string {
   if (type === "PROJECT_RESOLUTION") return "Project resolution";
   if (type === "NEW_REQUIREMENT") return "New requirement";
+  if (type === "DOCUMENT_REVISION") return "Document revision";
   return "Requirement change";
 }

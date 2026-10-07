@@ -17,6 +17,12 @@ from app.services.project_resolution_review_creation import REVIEW_CREATED_AUDIT
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
 from app.services.requirement_review_creation import REQUIREMENT_REVIEW_CREATED_AUDIT_EVENT
 from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
+from app.services.document_revision import (
+    DOCUMENT_REVISION_DUPLICATE_RECORDED,
+    DOCUMENT_REVISION_RETAINED_HISTORICAL,
+    DOCUMENT_REVISION_REVIEW_CREATED,
+    DOCUMENT_REVISION_SELECTED_CURRENT,
+)
 
 REQUIREMENT_RECONCILIATION_PROPOSED_AUDIT_EVENT = "requirement_reconciliation_proposed"
 
@@ -123,6 +129,35 @@ class ProjectActivityService:
                     audit,
                     project_id,
                     ProjectActivityType.DOCUMENT_FILED,
+                    summary,
+                    expose_transition=False,
+                ),
+            )
+        revision_activity = {
+            DOCUMENT_REVISION_SELECTED_CURRENT: (
+                ProjectActivityType.DOCUMENT_REVISION_SELECTED_CURRENT,
+                "Document selected as the current revision.",
+            ),
+            DOCUMENT_REVISION_RETAINED_HISTORICAL: (
+                ProjectActivityType.DOCUMENT_REVISION_RETAINED_HISTORICAL,
+                "Document retained as a historical revision.",
+            ),
+            DOCUMENT_REVISION_DUPLICATE_RECORDED: (
+                ProjectActivityType.DOCUMENT_REVISION_DUPLICATE_RECORDED,
+                "Duplicate revision submission retained historically.",
+            ),
+            DOCUMENT_REVISION_REVIEW_CREATED: (
+                ProjectActivityType.DOCUMENT_REVISION_REVIEW_CREATED,
+                "Document revision sent for inspection.",
+            ),
+        }.get(audit.event_type)
+        if revision_activity is not None:
+            event_type, summary = revision_activity
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    event_type,
                     summary,
                     expose_transition=False,
                 ),

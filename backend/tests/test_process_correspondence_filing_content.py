@@ -69,6 +69,7 @@ def test_normal_gmail_filing_loader_passes_bytes_to_hashing(monkeypatch, process
     monkeypatch.setattr(command, "download_gmail_attachment", MagicMock(return_value=downloaded))
     monkeypatch.setattr(command, "build_project_resolver_agent", lambda _settings: MagicMock())
     monkeypatch.setattr(command, "build_requirement_reconciler_agent", lambda _settings: MagicMock())
+    monkeypatch.setattr(command, "DocumentRevisionService", lambda **_kwargs: MagicMock())
     monkeypatch.setattr(
         "app.services.gmail_attachment_preparation.download_gmail_attachment",
         MagicMock(return_value=downloaded),

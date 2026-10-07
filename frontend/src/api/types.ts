@@ -71,7 +71,8 @@ export interface ProjectSetupRequest {
 export type ReviewType =
   | "PROJECT_RESOLUTION"
   | "REQUIREMENT_CHANGE"
-  | "NEW_REQUIREMENT";
+  | "NEW_REQUIREMENT"
+  | "DOCUMENT_REVISION";
 export type ReviewStatus = "PENDING" | "APPROVED" | "CORRECTED" | "REJECTED";
 export type ReviewAllowedAction = "APPROVE" | "ASSIGN_OR_CORRECT" | "REJECT";
 
@@ -223,7 +224,50 @@ export interface RequirementReviewDetail {
   };
 }
 
-export type ReviewReadDetail = ProjectResolutionReviewDetail | RequirementReviewDetail;
+export interface DocumentRevisionReviewDetail {
+  review_type: "DOCUMENT_REVISION";
+  allowed_actions: [];
+  review: ReviewQueueSummary;
+  correspondence: ReviewCorrespondence;
+  attachment: {
+    attachment_id: string;
+    filename: string;
+    mime_type: string;
+    content_hash: string | null;
+  };
+  state_transition_id: string;
+  transition_status: "PREVIEWED";
+  disposition: "REVIEW";
+  incoming_document: {
+    document_id: string;
+    source_attachment_id: string;
+    filename: string;
+    project_id: string;
+    project_code: string;
+    project_name: string;
+    category: string;
+    document_family_key: string | null;
+    revision_label: string | null;
+    revision_normalized: string | null;
+    revision_order: number | null;
+    content_hash: string;
+  };
+  current_document: {
+    document_id: string;
+    revision_normalized: string;
+    revision_order: number;
+    content_hash: string;
+  } | null;
+  outcome: "REVIEW_REQUIRED";
+  reasons: string[];
+  policy_version: "document-revision/1";
+  triggered_rule_ids: string[];
+}
+
+export type ReviewReadDetail =
+  | ProjectResolutionReviewDetail
+  | RequirementReviewDetail
+  | DocumentRevisionReviewDetail;
 
 export interface ReviewDecisionResponse {
   review_item_id: string;
@@ -240,7 +284,12 @@ export type ProjectActivityType =
   | "PROJECT_RESOLUTION_REVIEW_RESOLVED"
   | "REQUIREMENT_CHANGE_PROPOSED"
   | "REQUIREMENT_CHANGE_APPLIED"
-  | "REQUIREMENT_REVIEW_CREATED";
+  | "REQUIREMENT_REVIEW_CREATED"
+  | "DOCUMENT_FILED"
+  | "DOCUMENT_REVISION_SELECTED_CURRENT"
+  | "DOCUMENT_REVISION_RETAINED_HISTORICAL"
+  | "DOCUMENT_REVISION_DUPLICATE_RECORDED"
+  | "DOCUMENT_REVISION_REVIEW_CREATED";
 
 export interface ProjectActivityEvent {
   event_id: string;

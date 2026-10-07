@@ -13,6 +13,7 @@ from app.services.policy.requirement_authorization import REQUIREMENT_POLICY_AUT
 from app.services.project_activity import ProjectActivityError, ProjectActivityService
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
 from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
+from app.services.document_revision import DOCUMENT_REVISION_REVIEW_CREATED
 
 
 def _audit(
@@ -95,6 +96,25 @@ def test_document_filing_is_business_activity_without_unsupported_lineage_link()
 
     assert result.events[0].event_type is ProjectActivityType.DOCUMENT_FILED
     assert result.events[0].summary == 'Document "report.pdf" filed to Google Drive.'
+    assert result.events[0].state_transition_id is None
+
+
+def test_document_revision_decision_is_business_activity() -> None:
+    project_id = uuid4()
+    audit = _audit(
+        DOCUMENT_REVISION_REVIEW_CREATED,
+        datetime.now(UTC),
+        project_id=project_id,
+        transition_id=uuid4(),
+    )
+    service, _ = _service(project_id, [audit])
+
+    result = service.load(project_id)
+
+    assert result.events[0].event_type is (
+        ProjectActivityType.DOCUMENT_REVISION_REVIEW_CREATED
+    )
+    assert result.events[0].summary == "Document revision sent for inspection."
     assert result.events[0].state_transition_id is None
 
 

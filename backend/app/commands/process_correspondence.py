@@ -37,6 +37,7 @@ from app.services.requirement_reconciliation import RequirementReconciliationSer
 from app.services.requirement_reconciliation_context import RequirementReconciliationContextService
 from app.services.requirement_review_creation import RequirementReviewCreationService
 from app.services.document_filing import AttachmentContentUnavailable, DocumentFilingService
+from app.services.document_revision import DocumentRevisionService
 
 
 async def process_correspondence_event(
@@ -55,6 +56,7 @@ async def process_correspondence_event(
         requirements = RequirementRepository(session)
         lineage = LineageRepository(session)
         reviews = ReviewItemRepository(session)
+        documents = DocumentRepository(session)
 
         event = correspondence.get(correspondence_event_id)
         if event is None:
@@ -185,11 +187,17 @@ async def process_correspondence_event(
                     default_category=settings.drive_default_category_folder,
                     content_loader=load_attachment_content,
                     attachment_repository=attachments,
-                    document_repository=DocumentRepository(session),
+                    document_repository=documents,
                     project_repository=projects,
                     project_link_repository=links,
                     review_repository=reviews,
                     lineage_repository=lineage,
+                    revision_service=DocumentRevisionService(
+                        session=session,
+                        document_repository=documents,
+                        lineage_repository=lineage,
+                        review_repository=reviews,
+                    ),
                 )
                 if drive_client is not None
                 else None

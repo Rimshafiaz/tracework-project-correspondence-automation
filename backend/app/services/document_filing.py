@@ -28,6 +28,7 @@ from app.repositories.document import DocumentRepository
 from app.repositories.lineage import LineageRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.review_item import ReviewItemRepository
+from app.services.document_revision import DocumentRevisionService
 
 DOCUMENT_FILED_AUDIT_EVENT = "document_filed"
 DOCUMENT_FILING_FAILURE_CODE = "DRIVE_PROVIDER_UNAVAILABLE"
@@ -60,6 +61,7 @@ class DocumentFilingService:
         project_link_repository: CorrespondenceProjectLinkRepository,
         review_repository: ReviewItemRepository,
         lineage_repository: LineageRepository,
+        revision_service: DocumentRevisionService,
     ) -> None:
         self.session = session
         self.drive_client = drive_client
@@ -72,6 +74,7 @@ class DocumentFilingService:
         self.project_link_repository = project_link_repository
         self.review_repository = review_repository
         self.lineage_repository = lineage_repository
+        self.revision_service = revision_service
 
     def file_for_project_resolution(
         self,
@@ -239,6 +242,13 @@ class DocumentFilingService:
                 affected_entity_type=DOCUMENT_FILING_ENTITY_TYPE,
                 affected_entity_id=attachment.id,
             )
+            self._ensure_revision(
+                document=existing,
+                event=event,
+                proposal_id=proposal_id,
+                evaluation=evaluation,
+            )
+            self.session.commit()
             return DocumentFilingOutcome(
                 attachment_id=attachment.id,
                 project_id=project_id,
@@ -274,6 +284,13 @@ class DocumentFilingService:
             content_hash=content_hash,
         )
         if document.filing_status is DocumentFilingStatus.FILED:
+            self._ensure_revision(
+                document=document,
+                event=event,
+                proposal_id=proposal_id,
+                evaluation=evaluation,
+            )
+            self.session.commit()
             return DocumentFilingOutcome(
                 attachment_id=attachment.id,
                 project_id=project_id,
@@ -291,6 +308,12 @@ class DocumentFilingService:
         if document is None or transition is None:
             raise DocumentFilingIntegrityError("document filing preview disappeared")
         if document.filing_status is DocumentFilingStatus.FILED:
+            self._ensure_revision(
+                document=document,
+                event=event,
+                proposal_id=proposal_id,
+                evaluation=evaluation,
+            )
             self.session.commit()
             return DocumentFilingOutcome(
                 attachment_id=attachment.id,
@@ -340,6 +363,12 @@ class DocumentFilingService:
                     applied_at=filed_at,
                 )
             self._ensure_audit(event, project_id, proposal_id, evaluation, transition, document)
+            self._ensure_revision(
+                document=document,
+                event=event,
+                proposal_id=proposal_id,
+                evaluation=evaluation,
+            )
             self.session.commit()
         return DocumentFilingOutcome(
             attachment_id=attachment.id,
@@ -347,6 +376,21 @@ class DocumentFilingService:
             document_id=document.id,
             state_transition_id=transition.id,
             status=DocumentFilingOutcomeStatus.FILED,
+        )
+
+    def _ensure_revision(
+        self,
+        *,
+        document,
+        event: CorrespondenceEvent,
+        proposal_id: UUID,
+        evaluation: PolicyEvaluation,
+    ) -> None:
+        self.revision_service.evaluate_filed_document(
+            document_id=document.id,
+            correspondence_event_id=event.id,
+            ai_proposal_id=proposal_id,
+            policy_evaluation_id=evaluation.id,
         )
 
     def _ensure_preview(

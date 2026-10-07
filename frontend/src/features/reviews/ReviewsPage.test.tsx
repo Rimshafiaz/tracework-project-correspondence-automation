@@ -23,6 +23,7 @@ describe("ReviewsPage", () => {
     getReviews.mockResolvedValue([
       { ...base, review_item_id: "review-1", review_type: "PROJECT_RESOLUTION", allowed_actions: ["APPROVE", "ASSIGN_OR_CORRECT", "REJECT"] },
       { ...base, review_item_id: "review-2", review_type: "REQUIREMENT_CHANGE", allowed_actions: [] },
+      { ...base, review_item_id: "review-3", review_type: "DOCUMENT_REVISION", allowed_actions: [] },
     ]);
     renderWithProviders(<Routes><Route path="/reviews" element={<ReviewsPage />} /></Routes>, { route: "/reviews" });
 
@@ -30,5 +31,6 @@ describe("ReviewsPage", () => {
     expect(screen.getByRole("heading", { name: "Inspection only" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Project resolution/ })).toHaveAttribute("href", "/reviews/review-1");
     expect(screen.getByRole("link", { name: /Requirement change/ })).toHaveAttribute("href", "/reviews/review-2");
+    expect(screen.getByRole("link", { name: /Document revision/ })).toHaveAttribute("href", "/reviews/review-3");
   });
 });

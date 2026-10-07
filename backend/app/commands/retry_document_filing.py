@@ -15,6 +15,7 @@ from app.repositories.lineage import LineageRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.review_item import ReviewItemRepository
 from app.services.document_filing import AttachmentContentUnavailable, DocumentFilingService
+from app.services.document_revision import DocumentRevisionService
 from app.services.policy.project_identity_rules import PROJECT_IDENTITY_POLICY_VERSION
 
 
@@ -61,6 +62,8 @@ def retry_document_filing(
             except Exception as exc:
                 raise AttachmentContentUnavailable("attachment content could not be loaded") from exc
 
+        documents = DocumentRepository(session)
+        reviews = ReviewItemRepository(session)
         service = DocumentFilingService(
             session=session,
             drive_client=drive_client,
@@ -68,11 +71,17 @@ def retry_document_filing(
             default_category=settings.drive_default_category_folder,
             content_loader=load_attachment_content,
             attachment_repository=AttachmentRepository(session),
-            document_repository=DocumentRepository(session),
+            document_repository=documents,
             project_repository=ProjectRepository(session),
             project_link_repository=CorrespondenceProjectLinkRepository(session),
-            review_repository=ReviewItemRepository(session),
+            review_repository=reviews,
             lineage_repository=lineage,
+            revision_service=DocumentRevisionService(
+                session=session,
+                document_repository=documents,
+                lineage_repository=lineage,
+                review_repository=reviews,
+            ),
         )
         return service.file_for_project_resolution(
             proposal_id=proposal_id,

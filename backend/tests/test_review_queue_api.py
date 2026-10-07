@@ -24,7 +24,11 @@ from app.contracts.review_queue import (
     ProjectResolutionReviewReadDetail,
     RequirementChangeReviewReadDetail,
     ReviewQueueSummary,
+    DocumentRevisionReviewAttachment,
+    DocumentRevisionReviewDocument,
+    DocumentRevisionReviewReadDetail,
 )
+from app.contracts.document_revision import DocumentRevisionRule
 from app.contracts.transition_preview import PolicyEvaluationSnapshot, TransitionState
 from app.core.auth import AuthenticatedOperator, get_supabase_jwt_verifier
 from app.main import app
@@ -178,18 +182,63 @@ def _requirement_detail(summary):
     )
 
 
+def _document_revision_detail(summary):
+    project_id = uuid4()
+    attachment_id = uuid4()
+    return DocumentRevisionReviewReadDetail(
+        review=summary,
+        correspondence=ProjectResolutionReviewCorrespondence(
+            correspondence_event_id=summary.correspondence_event_id,
+            source="gmail",
+            sender_identifier="sender@example.test",
+            subject="Drawing revision",
+            body="Please inspect the attached revision.",
+            received_at=datetime.now(UTC),
+        ),
+        attachment=DocumentRevisionReviewAttachment(
+            attachment_id=attachment_id,
+            filename="Structural Plan R4.pdf",
+            mime_type="application/pdf",
+            content_hash="b" * 64,
+        ),
+        state_transition_id=uuid4(),
+        transition_status="PREVIEWED",
+        disposition="REVIEW",
+        incoming_document=DocumentRevisionReviewDocument(
+            document_id=uuid4(),
+            source_attachment_id=attachment_id,
+            filename="Structural Plan R4.pdf",
+            project_id=project_id,
+            project_code="TW-001",
+            project_name="Test Project",
+            category="Documents",
+            document_family_key="structural plan",
+            revision_label="R4",
+            revision_normalized="REV-4",
+            revision_order=4,
+            content_hash="b" * 64,
+        ),
+        reasons=("The same revision label exists with different content.",),
+        triggered_rule_ids=(
+            DocumentRevisionRule.SAME_REVISION_DIFFERENT_CONTENT_REVIEW,
+        ),
+    )
+
+
 @pytest.fixture
 def review_api():
     summaries = [
         _summary(ReviewType.PROJECT_RESOLUTION),
         _summary(ReviewType.REQUIREMENT_CHANGE),
         _summary(ReviewType.NEW_REQUIREMENT),
+        _summary(ReviewType.DOCUMENT_REVISION),
     ]
     service = FakeReviewQueueService(summaries)
     service.details = {
         summaries[0].review_item_id: _project_resolution_detail(summaries[0]),
         summaries[1].review_item_id: _requirement_detail(summaries[1]),
         summaries[2].review_item_id: _requirement_detail(summaries[2]),
+        summaries[3].review_item_id: _document_revision_detail(summaries[3]),
     }
     app.dependency_overrides[get_supabase_jwt_verifier] = TestTokenVerifier
     app.dependency_overrides[get_review_queue_query_service] = lambda: service
@@ -228,6 +277,7 @@ def test_consolidated_review_list_exposes_mixed_capabilities(review_api) -> None
         "PROJECT_RESOLUTION",
         "REQUIREMENT_CHANGE",
         "NEW_REQUIREMENT",
+        "DOCUMENT_REVISION",
     ]
     assert payload[0]["allowed_actions"] == [
         "APPROVE",
@@ -236,6 +286,7 @@ def test_consolidated_review_list_exposes_mixed_capabilities(review_api) -> None
     ]
     assert payload[1]["allowed_actions"] == []
     assert payload[2]["allowed_actions"] == []
+    assert payload[3]["allowed_actions"] == []
     assert [item["review_item_id"] for item in payload] == [
         str(item.review_item_id) for item in summaries
     ]
@@ -247,6 +298,7 @@ def test_consolidated_review_list_exposes_mixed_capabilities(review_api) -> None
         (0, "PROJECT_RESOLUTION"),
         (1, "REQUIREMENT_CHANGE"),
         (2, "NEW_REQUIREMENT"),
+        (3, "DOCUMENT_REVISION"),
     ],
 )
 def test_consolidated_review_detail_is_discriminated_by_type(
@@ -270,10 +322,14 @@ def test_consolidated_review_detail_is_discriminated_by_type(
             "ASSIGN_OR_CORRECT",
             "REJECT",
         ]
-    else:
+    elif index in {1, 2}:
         assert payload["handoff"]["transition_preview"]["policy"][
             "policy_version"
         ] == "requirement-policy/1"
+        assert payload["allowed_actions"] == []
+    else:
+        assert payload["policy_version"] == "document-revision/1"
+        assert payload["incoming_document"]["revision_normalized"] == "REV-4"
         assert payload["allowed_actions"] == []
 
 

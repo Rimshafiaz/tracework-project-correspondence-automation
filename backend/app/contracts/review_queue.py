@@ -10,7 +10,8 @@ from app.contracts.project_resolution_review_queue import (
     ProjectResolutionReviewDetail,
 )
 from app.contracts.requirement_review import RequirementReviewHandoff
-from app.models.enums import ReviewStatus, ReviewType
+from app.contracts.document_revision import DocumentRevisionRule, RevisionOutcome
+from app.models.enums import ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
 
 
 class ReviewAllowedAction(StrEnum):
@@ -129,9 +130,78 @@ class NewRequirementReviewReadDetail(_RequirementReviewReadDetail):
         return self
 
 
+class DocumentRevisionReviewDocument(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    document_id: UUID
+    source_attachment_id: UUID
+    filename: str
+    project_id: UUID
+    project_code: str
+    project_name: str
+    category: str
+    document_family_key: str | None
+    revision_label: str | None
+    revision_normalized: str | None
+    revision_order: int | None
+    content_hash: str
+
+
+class DocumentRevisionCurrentDocument(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    document_id: UUID
+    revision_normalized: str
+    revision_order: int
+    content_hash: str
+
+
+class DocumentRevisionReviewAttachment(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    attachment_id: UUID
+    filename: str
+    mime_type: str
+    content_hash: str | None
+
+
+class DocumentRevisionReviewReadDetail(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    review_type: Literal[ReviewType.DOCUMENT_REVISION] = ReviewType.DOCUMENT_REVISION
+    allowed_actions: tuple[ReviewAllowedAction, ...] = ()
+    review: ReviewQueueSummary
+    correspondence: ProjectResolutionReviewCorrespondence
+    attachment: DocumentRevisionReviewAttachment
+    state_transition_id: UUID
+    transition_status: TransitionStatus
+    disposition: TransitionDisposition
+    incoming_document: DocumentRevisionReviewDocument
+    current_document: DocumentRevisionCurrentDocument | None = None
+    outcome: Literal[RevisionOutcome.REVIEW_REQUIRED] = RevisionOutcome.REVIEW_REQUIRED
+    reasons: tuple[str, ...] = Field(min_length=1)
+    policy_version: Literal["document-revision/1"] = "document-revision/1"
+    triggered_rule_ids: tuple[DocumentRevisionRule, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_read_only_revision_review(self) -> "DocumentRevisionReviewReadDetail":
+        if self.allowed_actions:
+            raise ValueError("document revision reviews are read-only")
+        if self.review.review_type is not ReviewType.DOCUMENT_REVISION:
+            raise ValueError("document revision detail type is inconsistent")
+        if self.transition_status is not TransitionStatus.PREVIEWED:
+            raise ValueError("document revision review transition must be previewed")
+        if self.disposition is not TransitionDisposition.REVIEW:
+            raise ValueError("document revision review disposition must require review")
+        if len(self.triggered_rule_ids) != len(self.reasons):
+            raise ValueError("each document revision rule requires one reason")
+        return self
+
+
 ReviewReadDetail = Annotated[
     ProjectResolutionReviewReadDetail
     | RequirementChangeReviewReadDetail
-    | NewRequirementReviewReadDetail,
+    | NewRequirementReviewReadDetail
+    | DocumentRevisionReviewReadDetail,
     Field(discriminator="review_type"),
 ]

@@ -7,9 +7,12 @@ from app.api.dependencies import get_session
 from app.contracts.review_queue import ReviewQueueSummary, ReviewReadDetail
 from app.core.auth import require_authenticated_operator
 from app.repositories.correspondence_event import CorrespondenceEventRepository
+from app.repositories.attachment import AttachmentRepository
+from app.repositories.document import DocumentRepository
 from app.repositories.lineage import LineageRepository
 from app.repositories.requirement import RequirementRepository
 from app.repositories.review_item import ReviewItemRepository
+from app.repositories.project import ProjectRepository
 from app.services.policy.requirement_review_handoff import (
     RequirementReviewHandoffService,
 )
@@ -47,6 +50,9 @@ def get_review_queue_query_service(
             lineage_repository=lineage_repository,
             requirement_repository=RequirementRepository(session),
         ),
+        attachment_repository=AttachmentRepository(session),
+        document_repository=DocumentRepository(session),
+        project_repository=ProjectRepository(session),
     )
 
 

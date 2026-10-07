@@ -93,6 +93,7 @@ def _fixture(*, decision=PolicyDecision.ALLOW_AUTO_ACTION, project_count=1, reso
     lineage.get_policy_evaluation_by_id.return_value = evaluation
     lineage.list_policy_evidence.return_value = ()
     lineage.get_audit_event_for_transition.return_value = None
+    revisions = MagicMock()
     service = DocumentFilingService(
         session=session,
         drive_client=drive,
@@ -105,6 +106,7 @@ def _fixture(*, decision=PolicyDecision.ALLOW_AUTO_ACTION, project_count=1, reso
         project_link_repository=links,
         review_repository=reviews,
         lineage_repository=lineage,
+        revision_service=revisions,
     )
     return SimpleNamespace(**locals())
 
@@ -167,6 +169,12 @@ def test_policy_approved_attachment_files_and_persists_hash_id_and_audit():
     )
     assert deps.lineage.create_audit_event.call_args.kwargs["event_type"] == DOCUMENT_FILED_AUDIT_EVENT
     assert deps.lineage.create_audit_event.call_args.kwargs["details"]["drive_file_id"] == "drive-file"
+    deps.revisions.evaluate_filed_document.assert_called_once_with(
+        document_id=document.id,
+        correspondence_event_id=deps.event.id,
+        ai_proposal_id=deps.proposal.id,
+        policy_evaluation_id=deps.evaluation.id,
+    )
 
 
 def test_unresolved_or_rejected_project_never_calls_drive():
@@ -398,6 +406,13 @@ def test_existing_filed_document_is_an_idempotent_no_op():
 
     assert result.outcomes[0].status is DocumentFilingOutcomeStatus.ALREADY_FILED
     deps.drive.ensure_folder.assert_not_called()
+    deps.drive.upload_file.assert_not_called()
+    deps.revisions.evaluate_filed_document.assert_called_once_with(
+        document_id=document.id,
+        correspondence_event_id=deps.event.id,
+        ai_proposal_id=deps.proposal.id,
+        policy_evaluation_id=deps.evaluation.id,
+    )
 
 
 def test_provider_failure_leaves_retryable_document_without_false_success():
@@ -589,6 +604,7 @@ def test_upload_before_database_failure_is_recovered_without_duplicate_upload():
     deps.documents.mark_filed.assert_called_once()
     deps.lineage.mark_transition_applied.assert_called_once()
     deps.lineage.create_audit_event.assert_called_once()
+    assert deps.revisions.evaluate_filed_document.call_count == 2
 
 
 def test_retry_rechecks_authorization_before_touching_existing_failed_document():

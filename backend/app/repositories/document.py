@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
-from app.models.enums import DocumentFilingStatus
+from app.models.enums import DocumentFilingStatus, DocumentRevisionStatus
 
 
 class DocumentRepository:
@@ -35,6 +35,85 @@ class DocumentRepository:
             statement = statement.with_for_update()
         return self.session.scalar(statement)
 
+    def list_family_members(
+        self,
+        *,
+        project_id: UUID,
+        category: str,
+        document_family_key: str,
+        for_update: bool = False,
+    ) -> tuple[Document, ...]:
+        statement = (
+            select(Document)
+            .where(
+                Document.project_id == project_id,
+                Document.category == category,
+                Document.document_family_key == document_family_key,
+            )
+            .order_by(Document.created_at, Document.id)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return tuple(self.session.scalars(statement))
+
+    def get_current_family_member(
+        self,
+        *,
+        project_id: UUID,
+        category: str,
+        document_family_key: str,
+        for_update: bool = False,
+    ) -> Document | None:
+        statement = select(Document).where(
+            Document.project_id == project_id,
+            Document.category == category,
+            Document.document_family_key == document_family_key,
+            Document.revision_status == DocumentRevisionStatus.CURRENT,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def list_unassessed_for_project_category(
+        self,
+        *,
+        project_id: UUID,
+        category: str,
+        for_update: bool = False,
+    ) -> tuple[Document, ...]:
+        statement = (
+            select(Document)
+            .where(
+                Document.project_id == project_id,
+                Document.category == category,
+                Document.revision_status == DocumentRevisionStatus.UNASSESSED,
+            )
+            .order_by(Document.created_at, Document.id)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return tuple(self.session.scalars(statement))
+
+    def update_revision_metadata(
+        self,
+        document: Document,
+        *,
+        document_family_key: str | None,
+        revision_label: str | None,
+        revision_normalized: str | None,
+        revision_order: int | None,
+        revision_status: DocumentRevisionStatus,
+        revision_decided_at: datetime | None,
+    ) -> Document:
+        document.document_family_key = document_family_key
+        document.revision_label = revision_label
+        document.revision_normalized = revision_normalized
+        document.revision_order = revision_order
+        document.revision_status = revision_status
+        document.revision_decided_at = revision_decided_at
+        self.session.flush()
+        return document
+
     def create_pending(
         self,
         *,
@@ -51,6 +130,7 @@ class DocumentRepository:
             category=category,
             content_hash=content_hash,
             filing_status=DocumentFilingStatus.PENDING,
+            revision_status=DocumentRevisionStatus.UNASSESSED,
         )
         self.session.add(document)
         self.session.flush()
