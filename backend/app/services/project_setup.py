@@ -18,6 +18,7 @@ from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
 from app.repositories.project_identifier import ProjectIdentifierRepository
 from app.repositories.requirement import RequirementRepository
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 
 PROJECT_CREATED_AUDIT_EVENT = "project_created"
 PROJECT_IDENTIFIER_ADDED_AUDIT_EVENT = "project_identifier_added"
@@ -44,6 +45,7 @@ class ProjectSetupService:
         contact_repository: ProjectContactRepository,
         requirement_repository: RequirementRepository,
         audit_repository: LineageRepository,
+        follow_up_lifecycle_service: FollowUpLifecycleService,
     ) -> None:
         repositories = (
             project_repository,
@@ -60,6 +62,9 @@ class ProjectSetupService:
         self.contacts = contact_repository
         self.requirements = requirement_repository
         self.audit = audit_repository
+        if follow_up_lifecycle_service.session is not session:
+            raise ValueError("project setup services must share one session")
+        self.follow_up_lifecycle = follow_up_lifecycle_service
 
     def create(
         self,
@@ -137,7 +142,7 @@ class ProjectSetupService:
                     description=item.description,
                     expected_date=item.expected_date,
                 )
-                self._audit(
+                setup_audit = self._audit(
                     event_type=REQUIREMENT_INITIALIZED_AUDIT_EVENT,
                     operator=operator,
                     project_id=project.id,
@@ -152,6 +157,12 @@ class ProjectSetupService:
                             else None
                         ),
                     },
+                )
+                self.follow_up_lifecycle.reconcile(
+                    requirement.id,
+                    originating_audit_event_id=setup_audit.id,
+                    actor_type="authenticated_operator",
+                    actor_identifier=operator.subject,
                 )
 
             self.session.commit()
@@ -176,8 +187,8 @@ class ProjectSetupService:
         project_id: UUID,
         details: dict[str, object],
         requirement_id: UUID | None = None,
-    ) -> None:
-        self.audit.create_audit_event(
+    ):
+        return self.audit.create_audit_event(
             event_type=event_type,
             actor_type="authenticated_operator",
             actor_identifier=operator.subject,

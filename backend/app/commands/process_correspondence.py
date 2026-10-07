@@ -14,6 +14,7 @@ from app.repositories.attachment import AttachmentRepository
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
 from app.repositories.document import DocumentRepository
+from app.repositories.follow_up import FollowUpRepository
 from app.repositories.lineage import LineageRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
@@ -38,6 +39,7 @@ from app.services.requirement_reconciliation_context import RequirementReconcili
 from app.services.requirement_review_creation import RequirementReviewCreationService
 from app.services.document_filing import AttachmentContentUnavailable, DocumentFilingService
 from app.services.document_revision import DocumentRevisionService
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 
 
 async def process_correspondence_event(
@@ -57,6 +59,7 @@ async def process_correspondence_event(
         lineage = LineageRepository(session)
         reviews = ReviewItemRepository(session)
         documents = DocumentRepository(session)
+        follow_ups = FollowUpRepository(session)
 
         event = correspondence.get(correspondence_event_id)
         if event is None:
@@ -145,6 +148,12 @@ async def process_correspondence_event(
                 context_service=requirement_policy_context,
                 lineage_repository=lineage,
                 requirement_repository=requirements,
+                follow_up_lifecycle_service=FollowUpLifecycleService(
+                    session=session,
+                    requirement_repository=requirements,
+                    follow_up_repository=follow_ups,
+                    audit_repository=lineage,
+                ),
             ),
             review_creation_service=RequirementReviewCreationService(
                 session=session,

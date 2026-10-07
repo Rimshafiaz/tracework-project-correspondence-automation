@@ -15,6 +15,7 @@ from app.services.policy.requirement import evaluate_requirement_policy, reject_
 from app.services.policy.requirement_context import RequirementPolicyContextError, RequirementPolicyContextService
 from app.services.policy.requirement_persistence import REQUIREMENT_RECONCILIATION_ENTITY_TYPE, persist_requirement_policy_result, persist_requirement_transition_preview
 from app.services.policy.requirement_rules import REQUIREMENT_POLICY_VERSION
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 
 REQUIREMENT_POLICY_EVALUATED_AUDIT_EVENT = "requirement_policy_evaluated"
 REQUIREMENT_POLICY_AUTO_APPLIED_AUDIT_EVENT = "requirement_policy_auto_applied"
@@ -41,11 +42,15 @@ class RequirementPolicyAuthorizationService:
         context_service: RequirementPolicyContextService,
         lineage_repository: LineageRepository,
         requirement_repository: RequirementRepository,
+        follow_up_lifecycle_service: FollowUpLifecycleService,
     ) -> None:
         self.session = session
         self.context_service = context_service
         self.lineage_repository = lineage_repository
         self.requirement_repository = requirement_repository
+        if follow_up_lifecycle_service.session is not session:
+            raise ValueError("requirement authorization services must share one session")
+        self.follow_up_lifecycle = follow_up_lifecycle_service
 
     def authorize(self, proposal_id: UUID) -> RequirementPolicyAuthorizationResult:
         try:
@@ -169,6 +174,7 @@ class RequirementPolicyAuthorizationService:
             )
 
         applied_ids = []
+        applied_requirements = []
         for effect in result.requirement_effects:
             if effect.decision is not PolicyDecision.ALLOW_AUTO_ACTION:
                 raise RequirementPolicyAuthorizationError(
@@ -192,12 +198,21 @@ class RequirementPolicyAuthorizationService:
                 expected_date=effect.proposed_expected_date,
             )
             applied_ids.append(requirement.id)
+            applied_requirements.append(requirement)
 
         applied_at = datetime.now(UTC)
         self.lineage_repository.mark_transition_applied(
             transition,
             applied_at=applied_at,
         )
+        for requirement in applied_requirements:
+            self.follow_up_lifecycle.reconcile(
+                requirement.id,
+                originating_state_transition_id=transition.id,
+                correspondence_event_id=proposal.correspondence_event_id,
+                ai_proposal_id=proposal.id,
+                policy_evaluation_id=evaluation.id,
+            )
         if self.lineage_repository.get_audit_event(
             event_type=REQUIREMENT_POLICY_AUTO_APPLIED_AUDIT_EVENT,
             policy_evaluation_id=evaluation.id,

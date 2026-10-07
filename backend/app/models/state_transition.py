@@ -14,6 +14,7 @@ from app.models.policy_evaluation import PolicyEvaluation
 if TYPE_CHECKING:
     from app.models.audit_event import AuditEvent
     from app.models.review_item import ReviewItem
+    from app.models.follow_up import FollowUp
 
 
 class StateTransition(Base):
@@ -97,6 +98,9 @@ class StateTransition(Base):
     )
     audit_events: Mapped[list["AuditEvent"]] = relationship(
         back_populates="state_transition"
+    )
+    originated_follow_ups: Mapped[list["FollowUp"]] = relationship(
+        back_populates="originating_state_transition"
     )
 
 

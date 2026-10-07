@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
 
 from app.db.base import Base
 from app.models.ai_proposal import AIProposal
@@ -12,6 +13,9 @@ from app.models.project import Project
 from app.models.requirement import Requirement
 from app.models.review_item import ReviewItem
 from app.models.state_transition import StateTransition
+
+if TYPE_CHECKING:
+    from app.models.follow_up import FollowUp
 
 
 class AuditEvent(Base):
@@ -84,4 +88,6 @@ class AuditEvent(Base):
         back_populates="audit_events"
     )
     review_item: Mapped[ReviewItem | None] = relationship(back_populates="audit_events")
-
+    originated_follow_ups: Mapped[list["FollowUp"]] = relationship(
+        back_populates="originating_audit_event"
+    )

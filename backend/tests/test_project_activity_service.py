@@ -14,6 +14,7 @@ from app.services.project_activity import ProjectActivityError, ProjectActivityS
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
 from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
 from app.services.document_revision import DOCUMENT_REVISION_REVIEW_CREATED
+from app.services.follow_up_due import FOLLOW_UP_BECAME_DUE_AUDIT_EVENT
 
 
 def _audit(
@@ -79,6 +80,26 @@ def test_project_activity_is_chronological_and_excludes_technical_audits() -> No
         ProjectActivityType.REQUIREMENT_CHANGE_PROPOSED,
         ProjectActivityType.CORRESPONDENCE_LINKED,
     ]
+
+
+def test_follow_up_due_audit_maps_to_one_business_activity_event():
+    project_id = uuid4()
+    requirement_id = uuid4()
+    occurred_at = datetime.now(UTC)
+    audit = _audit(
+        FOLLOW_UP_BECAME_DUE_AUDIT_EVENT,
+        occurred_at,
+        project_id=project_id,
+    )
+    audit.requirement_id = requirement_id
+    service, _ = _service(project_id, [audit])
+
+    activity = service.load(project_id)
+
+    assert len(activity.events) == 1
+    assert activity.events[0].event_type is ProjectActivityType.FOLLOW_UP_BECAME_DUE
+    assert activity.events[0].summary == "Follow-up became due."
+    assert activity.events[0].requirement_id == requirement_id
 
 
 def test_document_filing_is_business_activity_without_unsupported_lineage_link() -> None:

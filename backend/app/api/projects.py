@@ -13,6 +13,8 @@ from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
 from app.repositories.project_identifier import ProjectIdentifierRepository
 from app.repositories.requirement import RequirementRepository
+from app.repositories.follow_up import FollowUpRepository
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 from app.services.project_activity import ProjectActivityError, ProjectActivityService
 from app.services.project_setup import ProjectSetupConflictError, ProjectSetupService
 from app.services.project_workspace import (
@@ -41,13 +43,21 @@ def get_project_workspace_service(
 def get_project_setup_service(
     session: Session = Depends(get_session),
 ) -> ProjectSetupService:
+    requirements = RequirementRepository(session)
+    lineage = LineageRepository(session)
     return ProjectSetupService(
         session=session,
         project_repository=ProjectRepository(session),
         identifier_repository=ProjectIdentifierRepository(session),
         contact_repository=ProjectContactRepository(session),
-        requirement_repository=RequirementRepository(session),
-        audit_repository=LineageRepository(session),
+        requirement_repository=requirements,
+        audit_repository=lineage,
+        follow_up_lifecycle_service=FollowUpLifecycleService(
+            session=session,
+            requirement_repository=requirements,
+            follow_up_repository=FollowUpRepository(session),
+            audit_repository=lineage,
+        ),
     )
 
 

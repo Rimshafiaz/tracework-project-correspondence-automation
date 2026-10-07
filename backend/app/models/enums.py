@@ -43,6 +43,23 @@ class DocumentRevisionStatus(StrEnum):
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
 
+class FollowUpPurpose(StrEnum):
+    OVERDUE_REQUIREMENT = "OVERDUE_REQUIREMENT"
+
+
+class FollowUpStatus(StrEnum):
+    SCHEDULED = "SCHEDULED"
+    DUE = "DUE"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+
+
+class FollowUpCancelReason(StrEnum):
+    REQUIREMENT_SATISFIED = "REQUIREMENT_SATISFIED"
+    EXPECTED_DATE_CHANGED = "EXPECTED_DATE_CHANGED"
+    EXPECTED_DATE_REMOVED = "EXPECTED_DATE_REMOVED"
+
+
 class IngestionCursorStatus(StrEnum):
     UNINITIALIZED = "UNINITIALIZED"
     ACTIVE = "ACTIVE"

@@ -12,6 +12,7 @@ from app.models.project import Project
 if TYPE_CHECKING:
     from app.models.audit_event import AuditEvent
     from app.models.evidence_item import EvidenceItem
+    from app.models.follow_up import FollowUp
 
 
 class Requirement(Base):
@@ -55,3 +56,4 @@ class Requirement(Base):
     audit_events: Mapped[list["AuditEvent"]] = relationship(
         back_populates="requirement"
     )
+    follow_ups: Mapped[list["FollowUp"]] = relationship(back_populates="requirement")

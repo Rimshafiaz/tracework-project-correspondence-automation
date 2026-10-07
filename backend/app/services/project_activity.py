@@ -23,6 +23,7 @@ from app.services.document_revision import (
     DOCUMENT_REVISION_REVIEW_CREATED,
     DOCUMENT_REVISION_SELECTED_CURRENT,
 )
+from app.services.follow_up_due import FOLLOW_UP_BECAME_DUE_AUDIT_EVENT
 
 REQUIREMENT_RECONCILIATION_PROPOSED_AUDIT_EVENT = "requirement_reconciliation_proposed"
 
@@ -131,6 +132,16 @@ class ProjectActivityService:
                     ProjectActivityType.DOCUMENT_FILED,
                     summary,
                     expose_transition=False,
+                ),
+            )
+        if audit.event_type == FOLLOW_UP_BECAME_DUE_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.FOLLOW_UP_BECAME_DUE,
+                    "Follow-up became due.",
+                    requirement_id=audit.requirement_id,
                 ),
             )
         revision_activity = {

@@ -21,6 +21,7 @@ from app.models.state_transition import StateTransition
 from app.repositories.attachment import AttachmentRepository
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
+from app.repositories.follow_up import FollowUpRepository
 from app.repositories.lineage import LineageRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
@@ -29,6 +30,7 @@ from app.repositories.requirement import RequirementRepository
 from app.repositories.review_item import ReviewItemRepository
 from app.services.core_correspondence_workflow import CoreCorrespondenceWorkflowService, CoreWorkflowStatus
 from app.services.evidence_lineage import EvidenceLineageService
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 from app.services.policy.project_identity_authorization import ProjectIdentityAuthorizationService
 from app.services.policy.requirement_authorization import RequirementPolicyAuthorizationService
 from app.services.policy.requirement_context import RequirementPolicyContextService
@@ -74,6 +76,7 @@ def test_postgres_core_path_persists_one_link_mutation_audit_activity_and_lineag
                 requirements = RequirementRepository(session)
                 lineage = LineageRepository(session)
                 reviews = ReviewItemRepository(session)
+                follow_ups = FollowUpRepository(session)
                 project = projects.create(
                     project_code=f"M17-{suffix}",
                     name=f"M17 Project {suffix}",
@@ -213,6 +216,12 @@ def test_postgres_core_path_persists_one_link_mutation_audit_activity_and_lineag
                             context_service=requirement_policy_context,
                             lineage_repository=lineage,
                             requirement_repository=requirements,
+                            follow_up_lifecycle_service=FollowUpLifecycleService(
+                                session=session,
+                                requirement_repository=requirements,
+                                follow_up_repository=follow_ups,
+                                audit_repository=lineage,
+                            ),
                         ),
                         review_creation_service=RequirementReviewCreationService(
                             session=session,

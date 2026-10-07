@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.contracts.requirement_policy import RequirementPolicyResult, RequirementPolicyRule, RequirementTransitionEffect
 from app.models.enums import PolicyDecision, RequirementState, TransitionDisposition, TransitionStatus
 from app.services.policy.requirement_authorization import RequirementPolicyAuthorizationError, RequirementPolicyAuthorizationService
+from app.services.follow_up_lifecycle import FollowUpLifecycleService
 
 
 class FakeLineageRepository:
@@ -155,19 +156,22 @@ def _service(proposal, context, requirements, *, fail_on_id=None):
         fail_on_id=fail_on_id,
     )
     context_service = MagicMock()
+    follow_up_lifecycle = MagicMock(spec=FollowUpLifecycleService)
+    follow_up_lifecycle.session = session
     context_service.build.return_value = context
     service = RequirementPolicyAuthorizationService(
         session=session,
         context_service=context_service,
         lineage_repository=lineage,
         requirement_repository=requirement_repository,
+        follow_up_lifecycle_service=follow_up_lifecycle,
     )
-    return service, session, lineage, requirement_repository, context_service
+    return service, session, lineage, requirement_repository, context_service, follow_up_lifecycle
 
 
 def test_allowed_bundle_is_applied_and_committed_once() -> None:
     proposal, context, result, requirement = _fixture()
-    service, session, lineage, requirements, context_service = _service(
+    service, session, lineage, requirements, context_service, follow_up_lifecycle = _service(
         proposal, context, (requirement,)
     )
 
@@ -189,6 +193,13 @@ def test_allowed_bundle_is_applied_and_committed_once() -> None:
     )
     session.commit.assert_called_once_with()
     session.rollback.assert_not_called()
+    follow_up_lifecycle.reconcile.assert_called_once_with(
+        requirement.id,
+        originating_state_transition_id=authorization.transition.id,
+        correspondence_event_id=proposal.correspondence_event_id,
+        ai_proposal_id=proposal.id,
+        policy_evaluation_id=authorization.evaluation.id,
+    )
 
 
 @pytest.mark.parametrize(
@@ -200,7 +211,7 @@ def test_allowed_bundle_is_applied_and_committed_once() -> None:
 )
 def test_non_allowed_bundle_never_mutates_requirement(decision, expected_status) -> None:
     proposal, context, result, requirement = _fixture(decision=decision)
-    service, session, lineage, requirements, _ = _service(
+    service, session, lineage, requirements, _, follow_up_lifecycle = _service(
         proposal, context, (requirement,)
     )
 
@@ -216,11 +227,12 @@ def test_non_allowed_bundle_never_mutates_requirement(decision, expected_status)
     assert authorization.transition.status is expected_status
     assert len(lineage.audits) == 1
     session.commit.assert_called_once_with()
+    follow_up_lifecycle.reconcile.assert_not_called()
 
 
 def test_retry_reuses_applied_bundle_without_duplicate_mutation_or_audit() -> None:
     proposal, context, result, requirement = _fixture()
-    service, session, lineage, requirements, context_service = _service(
+    service, session, lineage, requirements, context_service, follow_up_lifecycle = _service(
         proposal, context, (requirement,)
     )
 
@@ -237,11 +249,12 @@ def test_retry_reuses_applied_bundle_without_duplicate_mutation_or_audit() -> No
     assert context_service.build.call_count == 1
     assert len(lineage.audits) == 2
     assert session.commit.call_count == 2
+    follow_up_lifecycle.reconcile.assert_called_once()
 
 
 def test_write_failure_rolls_back_entire_authorization() -> None:
     proposal, context, result, requirement = _fixture()
-    service, session, _, _, _ = _service(
+    service, session, _, _, _, _ = _service(
         proposal,
         context,
         (requirement,),
@@ -252,6 +265,25 @@ def test_write_failure_rolls_back_entire_authorization() -> None:
         "app.services.policy.requirement_authorization.evaluate_requirement_policy",
         return_value=result,
     ), pytest.raises(RuntimeError, match="requirement write failed"):
+        service.authorize(proposal.id)
+
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once_with()
+
+
+def test_follow_up_failure_rolls_back_authoritative_mutation_transaction() -> None:
+    proposal, context, result, requirement = _fixture()
+    service, session, _, _, _, lifecycle = _service(
+        proposal,
+        context,
+        (requirement,),
+    )
+    lifecycle.reconcile.side_effect = RuntimeError("follow-up write failed")
+
+    with patch(
+        "app.services.policy.requirement_authorization.evaluate_requirement_policy",
+        return_value=result,
+    ), pytest.raises(RuntimeError, match="follow-up write failed"):
         service.authorize(proposal.id)
 
     session.commit.assert_not_called()
@@ -281,7 +313,7 @@ def test_multi_requirement_failure_rolls_back_once_without_commit() -> None:
             ),
         }
     )
-    service, session, _, _, _ = _service(
+    service, session, _, _, _, _ = _service(
         proposal,
         context,
         (first, second),
@@ -301,7 +333,7 @@ def test_multi_requirement_failure_rolls_back_once_without_commit() -> None:
 def test_changed_requirement_aborts_instead_of_applying_stale_effect() -> None:
     proposal, context, result, requirement = _fixture()
     requirement.state = RequirementState.PARTIAL
-    service, session, _, _, _ = _service(proposal, context, (requirement,))
+    service, session, _, _, _, _ = _service(proposal, context, (requirement,))
 
     with patch(
         "app.services.policy.requirement_authorization.evaluate_requirement_policy",

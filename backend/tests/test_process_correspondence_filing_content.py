@@ -35,8 +35,10 @@ def test_normal_gmail_filing_loader_passes_bytes_to_hashing(monkeypatch, process
         "ProjectIdentifierRepository", "ProjectContactRepository",
         "CorrespondenceProjectLinkRepository", "RequirementRepository",
         "LineageRepository", "ReviewItemRepository", "DocumentRepository",
+        "FollowUpRepository",
     ):
         repository = MagicMock()
+        repository.session = session
         repositories[name] = repository
         monkeypatch.setattr(command, name, MagicMock(return_value=repository))
     repositories["CorrespondenceEventRepository"].get.return_value = event
