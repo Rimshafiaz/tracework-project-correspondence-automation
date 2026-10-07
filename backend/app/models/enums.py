@@ -29,6 +29,12 @@ class AttachmentProcessingState(StrEnum):
     FAILED = "FAILED"
 
 
+class DocumentFilingStatus(StrEnum):
+    PENDING = "PENDING"
+    RETRYABLE_FAILURE = "RETRYABLE_FAILURE"
+    FILED = "FILED"
+
+
 class IngestionCursorStatus(StrEnum):
     UNINITIALIZED = "UNINITIALIZED"
     ACTIVE = "ACTIVE"

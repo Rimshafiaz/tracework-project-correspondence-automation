@@ -446,3 +446,16 @@ class LineageRepository:
             else AuditEvent.project_id.is_(None)
         )
         return self.session.scalar(statement)
+
+    def get_audit_event_for_transition(
+        self,
+        *,
+        event_type: str,
+        state_transition_id: UUID,
+    ) -> AuditEvent | None:
+        return self.session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.event_type == event_type,
+                AuditEvent.state_transition_id == state_transition_id,
+            )
+        )

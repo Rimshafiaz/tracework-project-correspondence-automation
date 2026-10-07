@@ -1,9 +1,13 @@
+import asyncio
 import hashlib
 import json
 from dataclasses import dataclass
 from uuid import UUID
 
+import httpx
+import httpx2
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 
 from app.ai.prompts.project_resolver import PROJECT_RESOLVER_PROMPT_VERSION
 from app.ai.schemas import CandidateSignalReference, ProjectResolution, ProjectResolverInput, ResolutionConcern, ResolutionStatus, ResolverAttachment, ResolverSourceField, SourceTextEvidence
@@ -13,6 +17,11 @@ from app.models.enums import ProposalType
 from app.repositories.lineage import LineageRepository
 
 DETERMINISTIC_NO_CANDIDATES_MODEL = "deterministic:no-candidates"
+PROJECT_RESOLVER_PROVIDER_ATTEMPTS = 3
+PROJECT_RESOLVER_RETRYABLE_STATUS_CODES = frozenset(
+    {408, 429, 500, 502, 503, 504}
+)
+PROJECT_RESOLVER_RETRY_INITIAL_DELAY_SECONDS = 0.5
 
 
 class ProjectResolutionValidationError(ValueError):
@@ -46,7 +55,9 @@ class ProjectResolutionService:
     ) -> ProjectResolutionResult:
         agent_invoked = bool(context.candidates.candidates)
         if agent_invoked:
-            run_result = await self.agent.run(context.model_dump_json())
+            run_result = await self._run_agent_with_provider_retry(
+                context.model_dump_json()
+            )
             resolution = run_result.output
             model_identifier = self.model_identifier
         else:
@@ -105,6 +116,35 @@ class ProjectResolutionService:
             resolution=resolution,
             proposal=proposal,
             agent_invoked=agent_invoked,
+        )
+
+    async def _run_agent_with_provider_retry(self, prompt: str):
+        for attempt in range(PROJECT_RESOLVER_PROVIDER_ATTEMPTS):
+            try:
+                return await self.agent.run(prompt)
+            except Exception as exc:
+                if (
+                    not self._is_retryable_provider_error(exc)
+                    or attempt == PROJECT_RESOLVER_PROVIDER_ATTEMPTS - 1
+                ):
+                    raise
+                await asyncio.sleep(
+                    PROJECT_RESOLVER_RETRY_INITIAL_DELAY_SECONDS * (2**attempt)
+                )
+        raise AssertionError("provider retry loop completed without a result")
+
+    @staticmethod
+    def _is_retryable_provider_error(exc: Exception) -> bool:
+        if isinstance(exc, ModelHTTPError):
+            return exc.status_code in PROJECT_RESOLVER_RETRYABLE_STATUS_CODES
+        return isinstance(
+            exc,
+            (
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                httpx2.TimeoutException,
+                httpx2.ConnectError,
+            ),
         )
 
     def _validate_resolution(

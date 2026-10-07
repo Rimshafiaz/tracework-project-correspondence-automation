@@ -20,6 +20,8 @@ from app.services.project_resolution_workflow import ProjectResolutionWorkflowSe
 from app.services.requirement_policy_workflow import RequirementPolicyWorkflowService
 from app.services.requirement_reconciliation import RequirementReconciliationService
 from app.services.requirement_reconciliation_context import RequirementReconciliationContextService
+from app.contracts.document_filing import DocumentFilingOutcome
+from app.services.document_filing import DocumentFilingService
 
 
 class CoreWorkflowStatus(StrEnum):
@@ -51,6 +53,7 @@ class CoreCorrespondenceWorkflowResult:
     project_link_ids: tuple[UUID, ...] = ()
     project_review_item_id: UUID | None = None
     requirement_outcomes: tuple[RequirementWorkflowOutcome, ...] = ()
+    document_filing_outcomes: tuple[DocumentFilingOutcome, ...] = ()
 
 
 class CoreCorrespondenceWorkflowError(RuntimeError):
@@ -73,6 +76,7 @@ class CoreCorrespondenceWorkflowService:
         requirement_context_service: RequirementReconciliationContextService,
         requirement_reconciliation_service: RequirementReconciliationService,
         requirement_workflow_service: RequirementPolicyWorkflowService,
+        document_filing_service: DocumentFilingService | None = None,
     ) -> None:
         self.session = session
         self.correspondence_repository = correspondence_repository
@@ -84,6 +88,7 @@ class CoreCorrespondenceWorkflowService:
         self.requirement_context_service = requirement_context_service
         self.requirement_reconciliation_service = requirement_reconciliation_service
         self.requirement_workflow_service = requirement_workflow_service
+        self.document_filing_service = document_filing_service
 
     async def process(self, correspondence_event_id: UUID) -> CoreCorrespondenceWorkflowResult:
         event = self.correspondence_repository.get_for_update(correspondence_event_id)
@@ -179,6 +184,18 @@ class CoreCorrespondenceWorkflowService:
                     "automatic project authorization produced no project link"
                 )
 
+            document_filing_outcomes = ()
+            if self.document_filing_service is not None:
+                stage = "document_filing"
+                document_filing_outcomes = (
+                    self.document_filing_service.file_for_project_resolution(
+                        proposal_id=project_proposal.id,
+                        policy_evaluation_id=(
+                            project_result.authorization.evaluation.id
+                        ),
+                    ).outcomes
+                )
+
             requirement_outcomes = []
             for link in project_links:
                 stage = f"requirement_reconciliation:{link.project_id}"
@@ -227,6 +244,7 @@ class CoreCorrespondenceWorkflowService:
             return CoreCorrespondenceWorkflowResult(
                 status=CoreWorkflowStatus.COMPLETED,
                 requirement_outcomes=tuple(requirement_outcomes),
+                document_filing_outcomes=document_filing_outcomes,
                 **common,
             )
         except Exception as exc:

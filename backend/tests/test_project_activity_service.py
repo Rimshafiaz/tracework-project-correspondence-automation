@@ -12,6 +12,7 @@ from app.services.policy.project_identity_authorization import AUTO_LINKED_AUDIT
 from app.services.policy.requirement_authorization import REQUIREMENT_POLICY_AUTO_APPLIED_AUDIT_EVENT
 from app.services.project_activity import ProjectActivityError, ProjectActivityService
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
+from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
 
 
 def _audit(
@@ -77,6 +78,24 @@ def test_project_activity_is_chronological_and_excludes_technical_audits() -> No
         ProjectActivityType.REQUIREMENT_CHANGE_PROPOSED,
         ProjectActivityType.CORRESPONDENCE_LINKED,
     ]
+
+
+def test_document_filing_is_business_activity_without_unsupported_lineage_link() -> None:
+    project_id = uuid4()
+    audit = _audit(
+        DOCUMENT_FILED_AUDIT_EVENT,
+        datetime.now(UTC),
+        project_id=project_id,
+        transition_id=uuid4(),
+        details={"filename": "report.pdf"},
+    )
+    service, _ = _service(project_id, [audit])
+
+    result = service.load(project_id)
+
+    assert result.events[0].event_type is ProjectActivityType.DOCUMENT_FILED
+    assert result.events[0].summary == 'Document "report.pdf" filed to Google Drive.'
+    assert result.events[0].state_transition_id is None
 
 
 def test_requirement_application_expands_to_readable_per_requirement_events() -> None:

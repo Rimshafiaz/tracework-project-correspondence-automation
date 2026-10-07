@@ -10,6 +10,7 @@ from app.models.correspondence_event import CorrespondenceEvent
 from app.models.enums import AttachmentProcessingState
 
 if TYPE_CHECKING:
+    from app.models.document import Document
     from app.models.evidence_item import EvidenceItem
 
 
@@ -72,4 +73,7 @@ class Attachment(Base):
     )
     evidence_items: Mapped[list["EvidenceItem"]] = relationship(
         back_populates="attachment"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="source_attachment"
     )

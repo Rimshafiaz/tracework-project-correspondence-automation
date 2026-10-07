@@ -52,6 +52,13 @@ class AttachmentRepository:
             .order_by(Attachment.created_at, Attachment.id)
         ).all()
 
+    def get_for_update(self, attachment_id: UUID) -> Attachment | None:
+        return self.session.scalar(
+            select(Attachment)
+            .where(Attachment.id == attachment_id)
+            .with_for_update()
+        )
+
     def set_content_hash(
         self,
         attachment: Attachment,

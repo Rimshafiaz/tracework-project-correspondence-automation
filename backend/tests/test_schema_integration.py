@@ -37,6 +37,7 @@ def test_core_schema_constraints() -> None:
                 "review_item_candidate_projects",
                 "audit_events",
                 "ingestion_cursors",
+                "documents",
             } <= set(inspect(connection).get_table_names())
 
             connection.execute(

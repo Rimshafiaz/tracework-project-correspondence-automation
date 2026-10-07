@@ -4,12 +4,16 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from pydantic_ai import Agent, ModelResponse, ToolCallPart, UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.ai.schemas import CandidateSignalReference, EvidenceConflict, ProjectResolution, ProjectResolverInput, ResolutionConcern, ResolutionEvidence, ResolutionStatus, ResolverAttachment, ResolverCorrespondence, ResolverSourceField, SourceTextEvidence
+from app.ai.prompts.project_resolver import PROJECT_RESOLVER_INSTRUCTIONS, PROJECT_RESOLVER_PROMPT_VERSION
 from app.contracts.project_candidate import CandidateSignalSource, CandidateSignalType, ProjectCandidate, ProjectCandidateSet, ProjectCandidateSignal, reconstruct_project_candidate_snapshot
 from app.models.enums import AttachmentProcessingState, ProjectStatus
+from app.services import project_resolution
 from app.services.project_resolution import DETERMINISTIC_NO_CANDIDATES_MODEL, ProjectResolutionService, ProjectResolutionValidationError
 
 
@@ -162,6 +166,115 @@ def test_clear_match_validates_excerpt_computes_offsets_and_persists_proposal() 
         == context.candidates
     )
     assert repository.audit_events[0].details["agent_invoked"] is True
+
+
+def test_prompt_prefers_supplied_signals_and_requires_verbatim_single_field_quotes() -> None:
+    assert PROJECT_RESOLVER_PROMPT_VERSION == "project-resolver-v2"
+    for instruction in (
+        "Prefer the supplied typed candidate signal references",
+        "one contiguous substring verbatim",
+        "Preserve every character",
+        "punctuation mark, space, and line break",
+        "Never paraphrase",
+        "combine subject, body, or attachment",
+        "omit the source excerpt",
+    ):
+        assert instruction in PROJECT_RESOLVER_INSTRUCTIONS
+
+
+def test_project_code_and_trusted_contact_support_signal_only_resolution() -> None:
+    candidate = _candidate("TW-002")
+    contact = ProjectCandidateSignal(
+        signal_type=CandidateSignalType.PROJECT_CONTACT,
+        matched_value="sender@example.test",
+        source=CandidateSignalSource.PROJECT_RECORD,
+        source_record_id=uuid4(),
+        exact=True,
+    )
+    candidate = candidate.model_copy(update={"signals": (*candidate.signals, contact)})
+    context = _context("The body names TW-002.", candidate)
+    code_reference = _signal_reference(candidate)
+    contact_reference = CandidateSignalReference(
+        project_id=candidate.project_id,
+        signal_type=contact.signal_type,
+        matched_value=contact.matched_value,
+        source=contact.source,
+        source_record_id=contact.source_record_id,
+    )
+    resolution = ProjectResolution(
+        status=ResolutionStatus.MATCHED,
+        project_ids=(candidate.project_id,),
+        evidence=(
+            ResolutionEvidence(
+                project_id=candidate.project_id,
+                signal_references=(code_reference, contact_reference),
+                interpretation="The supplied code and contact identify this candidate.",
+            ),
+        ),
+    )
+    repository = FakeLineageRepository()
+
+    result = asyncio.run(_service(resolution, repository).resolve(context))
+
+    assert result.resolution.project_ids == (candidate.project_id,)
+    assert repository.proposals[0].prompt_version == PROJECT_RESOLVER_PROMPT_VERSION
+    assert repository.proposals[0].structured_output["evidence"][0]["source_evidence"] == []
+    assert {item.source_type for item in repository.evidence} == {
+        "candidate_signal:project_code",
+        "candidate_signal:project_contact",
+    }
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "source_field", "excerpt"),
+    (
+        ("Project update", "Project TW-002 is ready.", ResolverSourceField.BODY, "Project TW-002 was approved."),
+        ("Project update", "TW-002 is ready.", ResolverSourceField.BODY, "TW-002  is ready."),
+        ("Project update", "TW-002 is ready.", ResolverSourceField.BODY, "TW-002, is ready."),
+        ("Project update", "TW-002 is ready.", ResolverSourceField.BODY, "Project update TW-002"),
+    ),
+    ids=("paraphrase", "whitespace", "punctuation", "cross-field"),
+)
+def test_inexact_source_excerpt_is_rejected_before_persistence(
+    subject: str,
+    body: str,
+    source_field: ResolverSourceField,
+    excerpt: str,
+) -> None:
+    candidate = _candidate("TW-002")
+    context = _context(body, candidate)
+    context = context.model_copy(
+        update={
+            "correspondence": context.correspondence.model_copy(
+                update={"subject": subject}
+            )
+        }
+    )
+    resolution = ProjectResolution(
+        status=ResolutionStatus.MATCHED,
+        project_ids=(candidate.project_id,),
+        evidence=(
+            ResolutionEvidence(
+                project_id=candidate.project_id,
+                signal_references=(_signal_reference(candidate),),
+                source_evidence=(
+                    SourceTextEvidence(
+                        correspondence_event_id=context.correspondence.correspondence_event_id,
+                        source_field=source_field,
+                        excerpt=excerpt,
+                    ),
+                ),
+                interpretation="The candidate signal refers to this project.",
+            ),
+        ),
+    )
+    repository = FakeLineageRepository()
+
+    with pytest.raises(ProjectResolutionValidationError, match="does not occur"):
+        asyncio.run(_service(resolution, repository).resolve(context))
+
+    assert repository.evidence == []
+    assert repository.proposals == []
 
 
 def test_empty_candidate_set_short_circuits_agent_and_persists_no_match() -> None:
@@ -397,6 +510,206 @@ def test_provider_failure_does_not_persist_a_proposal() -> None:
     with pytest.raises(RuntimeError, match="provider unavailable"):
         asyncio.run(service.resolve(context))
     assert repository.proposals == []
+
+
+def _provider_retry_service(
+    outcomes: list[ProjectResolution | Exception],
+    repository: FakeLineageRepository,
+    calls: list[int],
+) -> ProjectResolutionService:
+    def respond(messages, info: AgentInfo) -> ModelResponse:
+        calls.append(len(calls) + 1)
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    outcome.model_dump(mode="json"),
+                )
+            ]
+        )
+
+    return ProjectResolutionService(
+        agent=Agent(FunctionModel(respond), output_type=ProjectResolution),
+        lineage_repository=repository,
+        model_identifier="google:test-model",
+    )
+
+
+def _signal_only_resolution(candidate: ProjectCandidate) -> ProjectResolution:
+    return ProjectResolution(
+        status=ResolutionStatus.MATCHED,
+        project_ids=(candidate.project_id,),
+        evidence=(
+            ResolutionEvidence(
+                project_id=candidate.project_id,
+                signal_references=(_signal_reference(candidate),),
+                interpretation="The supplied project-code signal identifies the project.",
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("transient_failures", (1, 2))
+def test_transient_provider_failure_retries_until_success(
+    monkeypatch, transient_failures: int
+) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    resolution = _signal_only_resolution(candidate)
+    provider_error = ModelHTTPError(503, "gemini-test", {"status": "UNAVAILABLE"})
+    calls = []
+    sleeps = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fake_sleep)
+    outcomes = [
+        *(provider_error for _ in range(transient_failures)),
+        resolution,
+    ]
+
+    result = asyncio.run(
+        _provider_retry_service(outcomes, FakeLineageRepository(), calls).resolve(
+            context
+        )
+    )
+
+    assert result.resolution == resolution
+    assert len(calls) == transient_failures + 1
+    assert sleeps == [0.5, 1.0][:transient_failures]
+
+
+def test_temporary_transport_failure_is_retried(monkeypatch) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    resolution = _signal_only_resolution(candidate)
+    calls = []
+    sleeps = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fake_sleep)
+
+    result = asyncio.run(
+        _provider_retry_service(
+            [httpx.ConnectError("temporary connection failure"), resolution],
+            FakeLineageRepository(),
+            calls,
+        ).resolve(context)
+    )
+
+    assert result.resolution == resolution
+    assert calls == [1, 2]
+    assert sleeps == [0.5]
+
+
+def test_three_transient_provider_failures_propagate_final_error(
+    monkeypatch,
+) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    repository = FakeLineageRepository()
+    calls = []
+    sleeps = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fake_sleep)
+    failures = [
+        ModelHTTPError(503, "gemini-test", {"status": "UNAVAILABLE"})
+        for _ in range(3)
+    ]
+
+    with pytest.raises(ModelHTTPError) as error:
+        asyncio.run(
+            _provider_retry_service(failures, repository, calls).resolve(context)
+        )
+
+    assert error.value.status_code == 503
+    assert len(calls) == 3
+    assert sleeps == [0.5, 1.0]
+    assert repository.proposals == []
+
+
+def test_non_transient_provider_error_is_not_retried(monkeypatch) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    calls = []
+
+    async def fail_if_called(_delay: float) -> None:
+        raise AssertionError("non-transient failure must not sleep")
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fail_if_called)
+
+    with pytest.raises(ModelHTTPError) as error:
+        asyncio.run(
+            _provider_retry_service(
+                [ModelHTTPError(400, "gemini-test", {"status": "INVALID_ARGUMENT"})],
+                FakeLineageRepository(),
+                calls,
+            ).resolve(context)
+        )
+
+    assert error.value.status_code == 400
+    assert calls == [1]
+
+
+def test_grounding_validation_failure_does_not_retry_provider(monkeypatch) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    invalid = ProjectResolution(
+        status=ResolutionStatus.MATCHED,
+        project_ids=(candidate.project_id,),
+        evidence=(
+            ResolutionEvidence(
+                project_id=candidate.project_id,
+                source_evidence=(_body_evidence(context, "invented text"),),
+                interpretation="Invalid source evidence.",
+            ),
+        ),
+    )
+    calls = []
+
+    async def fail_if_called(_delay: float) -> None:
+        raise AssertionError("validation failure must not sleep")
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fail_if_called)
+
+    with pytest.raises(ProjectResolutionValidationError, match="does not occur"):
+        asyncio.run(
+            _provider_retry_service(
+                [invalid], FakeLineageRepository(), calls
+            ).resolve(context)
+        )
+
+    assert calls == [1]
+
+
+def test_normal_provider_success_executes_once(monkeypatch) -> None:
+    candidate = _candidate("ALPHA")
+    context = _context("The message names ALPHA.", candidate)
+    resolution = _signal_only_resolution(candidate)
+    calls = []
+
+    async def fail_if_called(_delay: float) -> None:
+        raise AssertionError("successful provider call must not sleep")
+
+    monkeypatch.setattr(project_resolution.asyncio, "sleep", fail_if_called)
+
+    result = asyncio.run(
+        _provider_retry_service(
+            [resolution], FakeLineageRepository(), calls
+        ).resolve(context)
+    )
+
+    assert result.resolution == resolution
+    assert calls == [1]
 
 
 def test_malformed_model_output_exhausts_retries_without_persistence() -> None:

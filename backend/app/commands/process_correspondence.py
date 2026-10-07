@@ -5,12 +5,15 @@ from uuid import UUID
 from app.ai.requirement_reconciler import build_requirement_reconciler_agent
 from app.ai.resolver import build_project_resolver_agent
 from app.adapters.gmail.client import create_gmail_client
+from app.adapters.gmail.attachment_content import download_gmail_attachment
+from app.adapters.drive.client import create_drive_client
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.models.enums import AttachmentProcessingState
 from app.repositories.attachment import AttachmentRepository
 from app.repositories.correspondence_event import CorrespondenceEventRepository
 from app.repositories.correspondence_project_link import CorrespondenceProjectLinkRepository
+from app.repositories.document import DocumentRepository
 from app.repositories.lineage import LineageRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.project_contact import ProjectContactRepository
@@ -33,6 +36,7 @@ from app.services.requirement_policy_workflow import RequirementPolicyWorkflowSe
 from app.services.requirement_reconciliation import RequirementReconciliationService
 from app.services.requirement_reconciliation_context import RequirementReconciliationContextService
 from app.services.requirement_review_creation import RequirementReviewCreationService
+from app.services.document_filing import AttachmentContentUnavailable, DocumentFilingService
 
 
 async def process_correspondence_event(
@@ -60,14 +64,43 @@ async def process_correspondence_event(
             for attachment in attachments.list_for_correspondence_event(event.id)
             if attachment.processing_state is AttachmentProcessingState.PENDING
         )
+        gmail_service = None
+        if event.source == "gmail" and (pending_attachments or settings.drive_enabled):
+            if settings.drive_enabled:
+                drive_client = create_drive_client(settings)
+            else:
+                drive_client = None
+            gmail_service = create_gmail_client(settings)
+        else:
+            drive_client = create_drive_client(settings) if settings.drive_enabled else None
+
         if event.source == "gmail" and pending_attachments:
             GmailAttachmentPreparationService(
-                gmail_service=create_gmail_client(settings),
+                gmail_service=gmail_service,
                 settings=settings,
                 correspondence_repository=correspondence,
                 attachment_repository=attachments,
             ).process(event.id)
             session.commit()
+
+        def load_attachment_content(source_event, attachment):
+            if source_event.source != "gmail" or gmail_service is None:
+                raise AttachmentContentUnavailable(
+                    "attachment source cannot be downloaded by the configured adapter"
+                )
+            try:
+                return download_gmail_attachment(
+                    gmail_service,
+                    attachment_id=attachment.id,
+                    message_id=source_event.external_event_id,
+                    source_attachment_id=attachment.source_attachment_id,
+                    declared_size_bytes=attachment.size_bytes,
+                    max_size_bytes=settings.attachment_max_size_bytes,
+                ).content
+            except Exception as exc:
+                raise AttachmentContentUnavailable(
+                    "attachment content could not be loaded"
+                ) from exc
 
         project_authorization = ProjectIdentityAuthorizationService(
             session=session,
@@ -144,6 +177,23 @@ async def process_correspondence_event(
                 model_identifier=settings.requirement_reconciler_model,
             ),
             requirement_workflow_service=requirement_workflow,
+            document_filing_service=(
+                DocumentFilingService(
+                    session=session,
+                    drive_client=drive_client,
+                    root_folder_name=settings.drive_root_folder_name,
+                    default_category=settings.drive_default_category_folder,
+                    content_loader=load_attachment_content,
+                    attachment_repository=attachments,
+                    document_repository=DocumentRepository(session),
+                    project_repository=projects,
+                    project_link_repository=links,
+                    review_repository=reviews,
+                    lineage_repository=lineage,
+                )
+                if drive_client is not None
+                else None
+            ),
         )
         return await workflow.process(correspondence_event_id)
     finally:

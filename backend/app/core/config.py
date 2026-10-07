@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     gmail_initial_after_epoch_seconds: int | None = None
     gmail_credentials_path: Path = Path(".secrets/gmail/credentials.json")
     gmail_token_path: Path = Path(".secrets/gmail/token.json")
+    drive_enabled: bool = False
+    drive_root_folder_name: str = "Tracework"
+    drive_default_category_folder: str = "Documents"
     attachment_max_size_bytes: int = Field(default=26_214_400, gt=0)
     pdf_max_pages: int = Field(default=250, gt=0)
     extraction_max_characters: int = Field(default=1_000_000, gt=0)
@@ -125,6 +128,14 @@ class Settings(BaseSettings):
         value = value.strip()
         if not value:
             raise ValueError("AI model name must not be blank")
+        return value
+
+    @field_validator("drive_root_folder_name", "drive_default_category_folder")
+    @classmethod
+    def reject_blank_drive_folder_names(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Drive folder names must not be blank")
         return value
 
 

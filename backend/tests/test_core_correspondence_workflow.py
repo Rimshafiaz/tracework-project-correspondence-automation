@@ -9,7 +9,7 @@ from app.models.enums import CorrespondenceProcessingState, PolicyDecision, Prop
 from app.services.core_correspondence_workflow import CoreCorrespondenceWorkflowService, CoreWorkflowStatus
 
 
-def _dependencies(*, project_decision=PolicyDecision.ALLOW_AUTO_ACTION):
+def _dependencies(*, project_decision=PolicyDecision.ALLOW_AUTO_ACTION, with_filing=False):
     event_id = uuid4()
     project_id = uuid4()
     link = SimpleNamespace(id=uuid4(), project_id=project_id)
@@ -69,6 +69,11 @@ def _dependencies(*, project_decision=PolicyDecision.ALLOW_AUTO_ACTION):
         review=None,
     )
     project_links = MagicMock()
+    document_filing = MagicMock() if with_filing else None
+    if document_filing is not None:
+        document_filing.file_for_project_resolution.return_value = SimpleNamespace(
+            outcomes=(SimpleNamespace(status="FILED"),)
+        )
     service = CoreCorrespondenceWorkflowService(
         session=session,
         correspondence_repository=correspondence,
@@ -80,8 +85,49 @@ def _dependencies(*, project_decision=PolicyDecision.ALLOW_AUTO_ACTION):
         requirement_context_service=requirement_context,
         requirement_reconciliation_service=requirement_reconciliation,
         requirement_workflow_service=requirement_workflow,
+        document_filing_service=document_filing,
     )
     return SimpleNamespace(**locals())
+
+
+def test_document_filing_runs_after_project_authorization_and_before_completion():
+    deps = _dependencies(with_filing=True)
+
+    result = asyncio.run(deps.service.process(deps.event_id))
+
+    deps.document_filing.file_for_project_resolution.assert_called_once_with(
+        proposal_id=deps.project_proposal.id,
+        policy_evaluation_id=deps.project_evaluation.id,
+    )
+    assert len(result.document_filing_outcomes) == 1
+
+
+def test_retryable_drive_failure_does_not_prevent_correspondence_completion():
+    deps = _dependencies(with_filing=True)
+    deps.document_filing.file_for_project_resolution.return_value.outcomes = (
+        SimpleNamespace(status="RETRYABLE_FAILURE"),
+    )
+
+    result = asyncio.run(deps.service.process(deps.event_id))
+
+    assert result.status is CoreWorkflowStatus.COMPLETED
+    assert deps.event.processing_state is CorrespondenceProcessingState.COMPLETED
+    deps.requirement_reconciliation.reconcile.assert_awaited_once()
+    deps.requirement_workflow.process.assert_called_once()
+
+
+def test_pending_project_review_never_invokes_document_filing():
+    deps = _dependencies(
+        project_decision=PolicyDecision.REVIEW_REQUIRED,
+        with_filing=True,
+    )
+    deps.project_workflow.process.return_value.review_item = SimpleNamespace(
+        id=uuid4(), status=ReviewStatus.PENDING
+    )
+
+    asyncio.run(deps.service.process(deps.event_id))
+
+    deps.document_filing.file_for_project_resolution.assert_not_called()
 
 
 def test_allowed_project_continues_through_requirement_policy_once():

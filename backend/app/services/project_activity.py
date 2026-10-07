@@ -16,6 +16,7 @@ from app.services.policy.requirement_authorization import REQUIREMENT_POLICY_AUT
 from app.services.project_resolution_review_creation import REVIEW_CREATED_AUDIT_EVENT
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
 from app.services.requirement_review_creation import REQUIREMENT_REVIEW_CREATED_AUDIT_EVENT
+from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
 
 REQUIREMENT_RECONCILIATION_PROPOSED_AUDIT_EVENT = "requirement_reconciliation_proposed"
 
@@ -110,6 +111,22 @@ class ProjectActivityService:
             )
         if audit.event_type == REQUIREMENT_POLICY_AUTO_APPLIED_AUDIT_EVENT:
             return self._requirement_changes(project_id, audit)
+        if audit.event_type == DOCUMENT_FILED_AUDIT_EVENT:
+            filename = audit.details.get("filename")
+            summary = (
+                f'Document "{filename}" filed to Google Drive.'
+                if isinstance(filename, str) and filename.strip()
+                else "Document filed to Google Drive."
+            )
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.DOCUMENT_FILED,
+                    summary,
+                    expose_transition=False,
+                ),
+            )
         return ()
 
     def _requirement_changes(self, project_id: UUID, audit) -> tuple[ProjectActivityEvent, ...]:
@@ -174,6 +191,7 @@ class ProjectActivityService:
         *,
         event_id: UUID | None = None,
         requirement_id: UUID | None = None,
+        expose_transition: bool = True,
     ) -> ProjectActivityEvent:
         human = audit.actor_type != "system"
         return ProjectActivityEvent(
@@ -201,7 +219,9 @@ class ProjectActivityService:
             ),
             proposal_id=audit.ai_proposal_id,
             policy_evaluation_id=audit.policy_evaluation_id,
-            state_transition_id=audit.state_transition_id,
+            state_transition_id=(
+                audit.state_transition_id if expose_transition else None
+            ),
             review_item_id=audit.review_item_id,
         )
 

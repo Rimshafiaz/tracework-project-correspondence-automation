@@ -3,6 +3,7 @@ from app.models.attachment import Attachment
 from app.models.audit_event import AuditEvent
 from app.models.correspondence_event import CorrespondenceEvent
 from app.models.correspondence_project_link import CorrespondenceProjectLink
+from app.models.document import Document
 from app.models.evidence_item import EvidenceItem
 from app.models.ingestion_cursor import IngestionCursor
 from app.models.policy_evaluation import PolicyEvaluation, PolicyEvaluationEvidence
@@ -20,6 +21,7 @@ __all__ = [
     "AuditEvent",
     "CorrespondenceEvent",
     "CorrespondenceProjectLink",
+    "Document",
     "EvidenceItem",
     "IngestionCursor",
     "PolicyEvaluation",
