@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.document import Document
     from app.models.follow_up import FollowUp
     from app.models.review_item import ReviewItemCandidateProject
+    from app.models.reply_draft import ReplyDraft
 
 
 class Project(Base):
@@ -70,3 +71,4 @@ class Project(Base):
     audit_events: Mapped[list["AuditEvent"]] = relationship(back_populates="project")
     documents: Mapped[list["Document"]] = relationship(back_populates="project")
     follow_ups: Mapped[list["FollowUp"]] = relationship(back_populates="project")
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="project")

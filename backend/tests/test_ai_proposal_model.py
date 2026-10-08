@@ -31,6 +31,7 @@ def test_ai_proposal_table_contract() -> None:
     assert event_fk.target_fullname == "correspondence_events.id"
     assert event_fk.ondelete == "RESTRICT"
     assert "ix_ai_proposals_event_type" in {index.name for index in table.indexes}
+    assert ProposalType.REPLY_DRAFT.value == "REPLY_DRAFT"
 
 
 def test_ai_proposal_evidence_link_contract() -> None:

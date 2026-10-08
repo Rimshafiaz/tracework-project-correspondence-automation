@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 
 from app.adapters import google_auth
 from app.adapters.drive.client import DRIVE_FILE_SCOPE
-from app.adapters.gmail.client import GMAIL_SCOPES
+from app.adapters.gmail.client import GMAIL_READONLY_SCOPE, GMAIL_SCOPES
 
 
 def _stored_token(path: Path, scopes: tuple[str, ...], *, expired: bool = False) -> None:
@@ -44,7 +44,7 @@ def test_gmail_only_cached_token_requires_drive_reauthorization(
     token_path = tmp_path / "token.json"
     _stored_token(token_path, GMAIL_SCOPES)
     replacement, make_flow = _mock_authorization(monkeypatch)
-    requested = (*GMAIL_SCOPES, DRIVE_FILE_SCOPE)
+    requested = (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE)
 
     result = google_auth.authorize_google(
         tmp_path / "credentials.json", token_path, requested
@@ -55,11 +55,27 @@ def test_gmail_only_cached_token_requires_drive_reauthorization(
     assert token_path.read_text(encoding="utf-8") == '{"token":"newly-authorized"}'
 
 
+def test_readonly_gmail_token_requires_reauthorization_for_gmail_send(
+    monkeypatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "token.json"
+    readonly_scope = ("https://www.googleapis.com/auth/gmail.readonly",)
+    _stored_token(token_path, readonly_scope)
+    replacement, make_flow = _mock_authorization(monkeypatch)
+
+    result = google_auth.authorize_google(
+        tmp_path / "credentials.json", token_path, GMAIL_SCOPES
+    )
+
+    assert result is replacement
+    make_flow.assert_called_once_with(str(tmp_path / "credentials.json"), GMAIL_SCOPES)
+
+
 def test_correctly_scoped_cached_token_is_reused_without_reauthorization(
     monkeypatch, tmp_path: Path
 ) -> None:
     token_path = tmp_path / "token.json"
-    requested = (*GMAIL_SCOPES, DRIVE_FILE_SCOPE)
+    requested = (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE)
     _stored_token(token_path, requested)
     original_file = token_path.read_text(encoding="utf-8")
     _, make_flow = _mock_authorization(monkeypatch)
@@ -79,7 +95,7 @@ def test_missing_token_uses_installed_app_authorization(
 ) -> None:
     token_path = tmp_path / "token.json"
     replacement, make_flow = _mock_authorization(monkeypatch)
-    requested = (*GMAIL_SCOPES, DRIVE_FILE_SCOPE)
+    requested = (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE)
 
     result = google_auth.authorize_google(
         tmp_path / "credentials.json", token_path, requested
@@ -94,7 +110,7 @@ def test_expired_correctly_scoped_token_is_refreshed(
     monkeypatch, tmp_path: Path
 ) -> None:
     token_path = tmp_path / "token.json"
-    requested = (*GMAIL_SCOPES, DRIVE_FILE_SCOPE)
+    requested = (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE)
     _stored_token(token_path, requested, expired=True)
     _, make_flow = _mock_authorization(monkeypatch)
     refreshed = []
@@ -122,7 +138,7 @@ def test_scope_check_preserves_stored_scope_information(
 ) -> None:
     token_path = tmp_path / "token.json"
     _stored_token(token_path, GMAIL_SCOPES)
-    requested = (*GMAIL_SCOPES, DRIVE_FILE_SCOPE)
+    requested = (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE)
     loaded_credentials = []
     original_loader = Credentials.from_authorized_user_file
 

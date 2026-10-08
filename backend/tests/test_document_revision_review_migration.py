@@ -27,4 +27,4 @@ def test_document_revision_review_migration_chains_from_0006() -> None:
 
     assert migration.revision == "0007"
     assert migration.down_revision == "0006"
-    assert ScriptDirectory.from_config(config).get_heads() == ["0008"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0010"]

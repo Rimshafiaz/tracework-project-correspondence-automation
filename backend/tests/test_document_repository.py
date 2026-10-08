@@ -106,3 +106,20 @@ def test_document_repository_updates_revision_metadata_on_existing_document():
     assert document.revision_status is DocumentRevisionStatus.CURRENT
     assert document.revision_decided_at == decided_at
     assert session.add.call_count == 1
+
+
+def test_document_repository_lists_project_revision_status_newest_first_and_bounded():
+    session = MagicMock()
+    session.scalars.return_value = []
+    repository = DocumentRepository(session)
+
+    assert repository.list_revision_status_for_project(project_id=uuid4(), limit=13) == ()
+
+    statement = session.scalars.call_args.args[0]
+    rendered = str(statement)
+    assert "documents.project_id" in rendered
+    assert "documents.revision_decided_at DESC NULLS LAST" in rendered
+    assert "documents.created_at DESC" in rendered
+    assert "documents.id DESC" in rendered
+    assert "LIMIT" in rendered
+    session.commit.assert_not_called()

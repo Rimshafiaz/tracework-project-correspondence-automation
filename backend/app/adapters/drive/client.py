@@ -5,7 +5,7 @@ from typing import Any
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
-from app.adapters.gmail.client import GMAIL_SCOPES
+from app.adapters.gmail.client import GMAIL_READONLY_SCOPE
 from app.adapters.google_auth import authorize_google
 from app.contracts.document_filing import DriveFileRecord
 from app.core.config import Settings
@@ -155,7 +155,7 @@ def create_drive_client(settings: Settings) -> GoogleDriveClient:
     credentials = authorize_google(
         settings.gmail_credentials_path,
         settings.gmail_token_path,
-        (*GMAIL_SCOPES, DRIVE_FILE_SCOPE),
+        (GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE),
     )
     service = build("drive", "v3", credentials=credentials, cache_discovery=False)
     return GoogleDriveClient(service)

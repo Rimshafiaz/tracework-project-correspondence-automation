@@ -11,6 +11,7 @@ from app.models.policy_evaluation import PolicyEvaluation, PolicyEvaluationEvide
 from app.models.project import Project
 from app.models.project_contact import ProjectContact
 from app.models.project_identifier import ProjectIdentifier
+from app.models.reply_draft import ReplyDraft
 from app.models.requirement import Requirement
 from app.models.review_item import ReviewItem, ReviewItemCandidateProject
 from app.models.state_transition import StateTransition, StateTransitionEvidence
@@ -31,6 +32,7 @@ __all__ = [
     "Project",
     "ProjectContact",
     "ProjectIdentifier",
+    "ReplyDraft",
     "Requirement",
     "ReviewItem",
     "ReviewItemCandidateProject",

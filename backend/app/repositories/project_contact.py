@@ -42,6 +42,22 @@ class ProjectContactRepository:
         )
         return self.session.scalars(statement).all()
 
+    def get_active_for_project_email(
+        self,
+        *,
+        project_id: UUID,
+        email_normalized: str,
+    ) -> ProjectContact | None:
+        if not email_normalized:
+            return None
+        return self.session.scalar(
+            select(ProjectContact).where(
+                ProjectContact.project_id == project_id,
+                ProjectContact.email_normalized == email_normalized,
+                ProjectContact.is_active.is_(True),
+            )
+        )
+
     def find_active_with_projects(
         self,
         email_normalized: str,

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.audit_event import AuditEvent
     from app.models.evidence_item import EvidenceItem
     from app.models.follow_up import FollowUp
+    from app.models.reply_draft import ReplyDraft
 
 
 class Requirement(Base):
@@ -57,3 +58,4 @@ class Requirement(Base):
         back_populates="requirement"
     )
     follow_ups: Mapped[list["FollowUp"]] = relationship(back_populates="requirement")
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="requirement")

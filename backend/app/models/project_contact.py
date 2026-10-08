@@ -6,6 +6,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.project import Project
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.reply_draft import ReplyDraft
 
 
 class ProjectContact(Base):
@@ -43,3 +47,6 @@ class ProjectContact(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="contacts")
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(
+        back_populates="project_contact"
+    )

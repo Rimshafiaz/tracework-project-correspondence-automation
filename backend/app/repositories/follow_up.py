@@ -68,7 +68,10 @@ class FollowUpRepository:
         *,
         requirement_id: UUID,
         purpose: FollowUpPurpose,
+        limit: int | None = None,
     ) -> Sequence[FollowUp]:
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
         statement = (
             select(FollowUp)
             .where(
@@ -77,6 +80,8 @@ class FollowUpRepository:
             )
             .order_by(FollowUp.created_at, FollowUp.id)
         )
+        if limit is not None:
+            statement = statement.limit(limit)
         return self.session.scalars(statement).all()
 
     def list_scheduled_due(

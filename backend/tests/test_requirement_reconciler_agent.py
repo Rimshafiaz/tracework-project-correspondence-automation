@@ -39,3 +39,12 @@ def test_requirement_reconciler_model_name_cannot_be_blank() -> None:
             database_url=DATABASE_URL,
             requirement_reconciler_model=" ",
         )
+
+
+def test_reply_drafter_model_name_uses_default_and_rejects_blank() -> None:
+    assert Settings(database_url=DATABASE_URL).reply_drafter_model == "gemini-3.7-flash"
+    with pytest.raises(ValidationError, match="AI model name"):
+        Settings(
+            database_url=DATABASE_URL,
+            reply_drafter_model=" ",
+        )

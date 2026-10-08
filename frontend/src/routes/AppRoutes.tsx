@@ -9,6 +9,7 @@ import { ProjectsPage } from "../features/projects/ProjectsPage";
 import { NewProjectPage } from "../features/projects/NewProjectPage";
 import { ReviewDetailPage } from "../features/reviews/ReviewDetailPage";
 import { ReviewsPage } from "../features/reviews/ReviewsPage";
+import { ReplyDraftDetailPage } from "../features/reply-drafts/ReplyDraftDetailPage";
 
 const DevelopmentPreviewRoutes = import.meta.env.DEV
   ? lazy(() => import("../dev/DevelopmentPreviewRoutes"))
@@ -36,6 +37,7 @@ export function AppRoutes() {
           <Route path="projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="reviews/:reviewId" element={<ReviewDetailPage />} />
+          <Route path="reply-drafts/:draftId" element={<ReplyDraftDetailPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/projects" replace />} />

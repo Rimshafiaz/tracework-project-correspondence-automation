@@ -8,4 +8,6 @@ export const queryKeys = {
     ["transitions", transitionId, "lineage"] as const,
   reviews: ["reviews"] as const,
   review: (reviewId: string) => ["reviews", reviewId] as const,
+  replyDraft: (draftId: string) => ["reply-drafts", draftId] as const,
+  projectReplyDrafts: (projectId: string) => ["projects", projectId, "reply-drafts"] as const,
 };

@@ -78,6 +78,21 @@ def test_repository_history_is_deterministic():
     assert "ORDER BY follow_ups.created_at, follow_ups.id" in str(statement)
 
 
+def test_repository_history_accepts_a_positive_bound():
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = ()
+    repository = FollowUpRepository(session)
+
+    assert repository.list_history(
+        requirement_id=uuid4(),
+        purpose=FollowUpPurpose.OVERDUE_REQUIREMENT,
+        limit=13,
+    ) == ()
+
+    statement = session.scalars.call_args.args[0]
+    assert "LIMIT" in str(statement)
+
+
 def test_repository_mechanically_updates_lifecycle_fields():
     session = MagicMock()
     repository = FollowUpRepository(session)

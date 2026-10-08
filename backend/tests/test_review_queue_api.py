@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
@@ -7,7 +8,11 @@ import pytest
 
 from app.ai.requirement_schemas import RequirementReconciliation
 from app.ai.schemas import ProjectResolution, ResolutionConcern, ResolutionStatus
-from app.api.reviews import get_review_queue_query_service
+from app.api.reviews import (
+    get_requirement_review_decision_service,
+    get_review_queue_query_service,
+)
+from app.contracts.requirement_review_decision import RequirementReviewAction
 from app.contracts.project_candidate import ProjectCandidateSet
 from app.contracts.project_resolution_review_queue import (
     ProjectResolutionReviewCorrespondence,
@@ -21,6 +26,7 @@ from app.contracts.requirement_review import RequirementReviewHandoff
 from app.contracts.review_queue import (
     NewRequirementReviewReadDetail,
     PROJECT_RESOLUTION_ALLOWED_ACTIONS,
+    REQUIREMENT_REVIEW_ALLOWED_ACTIONS,
     ProjectResolutionReviewReadDetail,
     RequirementChangeReviewReadDetail,
     ReviewQueueSummary,
@@ -59,6 +65,38 @@ class FakeReviewQueueService:
         return self.details[review_id]
 
 
+class FakeRequirementReviewDecisionService:
+    def __init__(self, review) -> None:
+        self.review = review
+        self.calls = []
+
+    def approve(self, review_id, *, operator_subject):
+        self.calls.append(("approve", review_id, operator_subject))
+        return type("Result", (), {
+            "review_item": SimpleNamespace(
+                id=self.review.review_item_id,
+                status=ReviewStatus.APPROVED,
+            ),
+            "action": RequirementReviewAction.APPROVE,
+            "applied_requirement_ids": (),
+            "follow_up_ids": (),
+            "idempotent_replay": False,
+        })()
+
+    def reject(self, review_id, *, operator_subject):
+        self.calls.append(("reject", review_id, operator_subject))
+        return type("Result", (), {
+            "review_item": SimpleNamespace(
+                id=self.review.review_item_id,
+                status=ReviewStatus.REJECTED,
+            ),
+            "action": RequirementReviewAction.REJECT,
+            "applied_requirement_ids": (),
+            "follow_up_ids": (),
+            "idempotent_replay": False,
+        })()
+
+
 def _summary(review_type):
     return ReviewQueueSummary(
         review_item_id=uuid4(),
@@ -70,6 +108,8 @@ def _summary(review_type):
         allowed_actions=(
             PROJECT_RESOLUTION_ALLOWED_ACTIONS
             if review_type is ReviewType.PROJECT_RESOLUTION
+            else REQUIREMENT_REVIEW_ALLOWED_ACTIONS
+            if review_type in {ReviewType.REQUIREMENT_CHANGE, ReviewType.NEW_REQUIREMENT}
             else ()
         ),
     )
@@ -176,6 +216,7 @@ def _requirement_detail(summary):
         else RequirementChangeReviewReadDetail
     )
     return detail_type(
+        allowed_actions=REQUIREMENT_REVIEW_ALLOWED_ACTIONS,
         review=summary,
         correspondence=correspondence,
         handoff=handoff,
@@ -262,6 +303,22 @@ def _request(path, *, authenticated=True):
     return asyncio.run(send())
 
 
+def _post(path, *, authenticated=True):
+    async def send():
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            headers = (
+                {"Authorization": "Bearer valid-test-token"}
+                if authenticated
+                else None
+            )
+            return await client.post(path, headers=headers)
+
+    return asyncio.run(send())
+
+
 def test_consolidated_review_list_requires_authentication(review_api) -> None:
     assert _request("/reviews", authenticated=False).status_code == 401
 
@@ -284,8 +341,8 @@ def test_consolidated_review_list_exposes_mixed_capabilities(review_api) -> None
         "ASSIGN_OR_CORRECT",
         "REJECT",
     ]
-    assert payload[1]["allowed_actions"] == []
-    assert payload[2]["allowed_actions"] == []
+    assert payload[1]["allowed_actions"] == ["APPROVE", "REJECT"]
+    assert payload[2]["allowed_actions"] == ["APPROVE", "REJECT"]
     assert payload[3]["allowed_actions"] == []
     assert [item["review_item_id"] for item in payload] == [
         str(item.review_item_id) for item in summaries
@@ -326,7 +383,7 @@ def test_consolidated_review_detail_is_discriminated_by_type(
         assert payload["handoff"]["transition_preview"]["policy"][
             "policy_version"
         ] == "requirement-policy/1"
-        assert payload["allowed_actions"] == []
+        assert payload["allowed_actions"] == ["APPROVE", "REJECT"]
     else:
         assert payload["policy_version"] == "document-revision/1"
         assert payload["incoming_document"]["revision_normalized"] == "REV-4"
@@ -349,3 +406,26 @@ def test_broken_review_history_is_sanitized(review_api) -> None:
     assert response.status_code == 409
     assert response.json() == {"detail": "review history is inconsistent"}
     assert "sensitive" not in response.text
+
+
+def test_requirement_review_decisions_require_authentication(review_api) -> None:
+    _, summaries = review_api
+
+    response = _post(f"/reviews/{summaries[1].review_item_id}/approve", authenticated=False)
+
+    assert response.status_code == 401
+
+
+def test_requirement_review_decision_routes_delegate_only_human_action(review_api) -> None:
+    _, summaries = review_api
+    summary = summaries[1]
+    decision_service = FakeRequirementReviewDecisionService(summary)
+    app.dependency_overrides[get_requirement_review_decision_service] = lambda: decision_service
+
+    response = _post(f"/reviews/{summary.review_item_id}/approve")
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "APPROVE"
+    assert decision_service.calls == [
+        ("approve", summary.review_item_id, "operator-subject")
+    ]

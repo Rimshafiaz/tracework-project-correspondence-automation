@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +9,8 @@ const api = vi.hoisted(() => ({
   approveProjectResolution: vi.fn(),
   assignProjectResolution: vi.fn(),
   rejectProjectResolution: vi.fn(),
+  approveRequirementReview: vi.fn(),
+  rejectRequirementReview: vi.fn(),
 }));
 
 vi.mock("../../api/reviews", () => ({
@@ -15,6 +18,8 @@ vi.mock("../../api/reviews", () => ({
   approveProjectResolution: api.approveProjectResolution,
   assignProjectResolution: api.assignProjectResolution,
   rejectProjectResolution: api.rejectProjectResolution,
+  approveRequirementReview: api.approveRequirementReview,
+  rejectRequirementReview: api.rejectRequirementReview,
 }));
 vi.mock("../../api/projects", () => ({ getProjects: api.getProjects }));
 
@@ -45,10 +50,10 @@ describe("ReviewDetailPage", () => {
     api.getProjects.mockResolvedValue([]);
   });
 
-  it("renders a requirement review as an inspection-only field and evidence record", async () => {
+  it("renders actionable requirement review controls and submits the human decision", async () => {
     api.getReview.mockResolvedValue({
       review_type: "REQUIREMENT_CHANGE",
-      allowed_actions: [],
+      allowed_actions: ["APPROVE", "REJECT"],
       review: {
         review_item_id: "review-1",
         correspondence_event_id: "correspondence-1",
@@ -57,7 +62,7 @@ describe("ReviewDetailPage", () => {
         review_reason: "Requirement change requires review.",
         created_at: "2026-10-05T09:05:00Z",
         resolved_at: null,
-        allowed_actions: [],
+        allowed_actions: ["APPROVE", "REJECT"],
       },
       correspondence,
       handoff: {
@@ -95,7 +100,9 @@ describe("ReviewDetailPage", () => {
     expect(screen.getByRole("columnheader", { name: "Current" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Proposed" })).toBeInTheDocument();
     expect(screen.getByText("partly complete")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /approve|reject|assign/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(api.approveRequirementReview).toHaveBeenCalledWith("review-1");
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 
   it("shows only the supported project-resolution decision actions", async () => {

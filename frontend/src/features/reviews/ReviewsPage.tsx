@@ -20,8 +20,8 @@ export function ReviewsPage() {
   const inspection = reviews.data.filter((review) => review.allowed_actions.length === 0);
   return (
     <ReviewPageFrame pendingCount={reviews.data.length}>
-      <ReviewRegister title="Needs a decision" description="Project-resolution reviews can be approved, corrected, or rejected." reviews={actionable} empty="No reviews currently need a decision." />
-      <ReviewRegister title="Inspection only" description="Requirement and document revision reviews are readable here but have no mutation actions." reviews={inspection} empty="No inspection-only reviews are pending." />
+      <ReviewRegister title="Needs a decision" description="Human review actions are available for the proposed authoritative change." reviews={actionable} empty="No reviews currently need a decision." />
+      <ReviewRegister title="Inspection only" description="Document revision reviews are readable here but have no mutation actions." reviews={inspection} empty="No inspection-only reviews are pending." />
     </ReviewPageFrame>
   );
 }

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.correspondence_project_link import CorrespondenceProjectLink
     from app.models.evidence_item import EvidenceItem
     from app.models.review_item import ReviewItem
+    from app.models.reply_draft import ReplyDraft
 
 
 class CorrespondenceEvent(Base):
@@ -95,4 +96,12 @@ class CorrespondenceEvent(Base):
     )
     audit_events: Mapped[list["AuditEvent"]] = relationship(
         back_populates="correspondence_event"
+    )
+    source_reply_drafts: Mapped[list["ReplyDraft"]] = relationship(
+        back_populates="source_correspondence_event",
+        foreign_keys="ReplyDraft.source_correspondence_event_id",
+    )
+    target_reply_drafts: Mapped[list["ReplyDraft"]] = relationship(
+        back_populates="target_correspondence_event",
+        foreign_keys="ReplyDraft.target_correspondence_event_id",
     )

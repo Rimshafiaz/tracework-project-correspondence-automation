@@ -61,6 +61,24 @@ def test_list_for_conversation_is_source_scoped() -> None:
     assert len(statement._where_criteria) == 2
 
 
+def test_list_authoritatively_linked_for_project_is_bounded_and_newest_first() -> None:
+    session = MagicMock(spec=Session)
+    repository = CorrespondenceEventRepository(session)
+    session.scalars.return_value.all.return_value = []
+
+    assert repository.list_authoritatively_linked_for_project(
+        project_id=uuid4(),
+        limit=9,
+    ) == []
+
+    statement = session.scalars.call_args.args[0]
+    rendered = str(statement)
+    assert "correspondence_project_links.project_id" in rendered
+    assert "ORDER BY correspondence_events.received_at DESC, correspondence_events.id DESC" in rendered
+    assert "LIMIT" in rendered
+    session.commit.assert_not_called()
+
+
 def test_update_processing_state_records_failure_without_committing() -> None:
     session = MagicMock(spec=Session)
     repository = CorrespondenceEventRepository(session)

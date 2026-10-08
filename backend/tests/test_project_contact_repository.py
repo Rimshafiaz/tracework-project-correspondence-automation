@@ -75,3 +75,35 @@ def test_find_active_with_projects_skips_empty_input() -> None:
 
     assert repository.find_active_with_projects("") == []
     session.execute.assert_not_called()
+
+
+def test_get_active_for_project_email_requires_exact_active_contact() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectContactRepository(session)
+    project_id = uuid4()
+    contact = MagicMock(spec=ProjectContact)
+    session.scalar.return_value = contact
+
+    assert (
+        repository.get_active_for_project_email(
+            project_id=project_id,
+            email_normalized="trusted@example.com",
+        )
+        is contact
+    )
+    statement = session.scalar.call_args.args[0]
+    assert len(statement._where_criteria) == 3
+    session.commit.assert_not_called()
+
+
+def test_get_active_for_project_email_rejects_blank_email_without_query() -> None:
+    session = MagicMock(spec=Session)
+    repository = ProjectContactRepository(session)
+
+    assert (
+        repository.get_active_for_project_email(
+            project_id=uuid4(), email_normalized=""
+        )
+        is None
+    )
+    session.scalar.assert_not_called()

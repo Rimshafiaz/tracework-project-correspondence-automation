@@ -70,10 +70,13 @@ class LineageRepository:
         *,
         project_id: UUID,
         requirement_ids: set[UUID],
+        limit: int | None = None,
     ) -> Sequence[EvidenceItem]:
         if not requirement_ids:
             return []
-        return self.session.scalars(
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+        statement = (
             select(EvidenceItem)
             .where(
                 EvidenceItem.project_id == project_id,
@@ -81,7 +84,10 @@ class LineageRepository:
                 EvidenceItem.validity == EvidenceValidity.VALID,
             )
             .order_by(EvidenceItem.created_at, EvidenceItem.id)
-        ).all()
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        return self.session.scalars(statement).all()
 
     def get_policy_evaluation(
         self,
@@ -160,6 +166,16 @@ class LineageRepository:
         state_transition_id: UUID,
     ) -> StateTransition | None:
         return self.session.get(StateTransition, state_transition_id)
+
+    def get_state_transition_by_id_for_update(
+        self,
+        state_transition_id: UUID,
+    ) -> StateTransition | None:
+        return self.session.scalar(
+            select(StateTransition)
+            .where(StateTransition.id == state_transition_id)
+            .with_for_update()
+        )
 
     def list_audit_events_for_lineage(
         self,
@@ -446,6 +462,9 @@ class LineageRepository:
             else AuditEvent.project_id.is_(None)
         )
         return self.session.scalar(statement)
+
+    def get_audit_event_by_id(self, audit_event_id: UUID) -> AuditEvent | None:
+        return self.session.get(AuditEvent, audit_event_id)
 
     def get_audit_event_for_transition(
         self,

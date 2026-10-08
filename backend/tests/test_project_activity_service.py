@@ -15,6 +15,11 @@ from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDI
 from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
 from app.services.document_revision import DOCUMENT_REVISION_REVIEW_CREATED
 from app.services.follow_up_due import FOLLOW_UP_BECAME_DUE_AUDIT_EVENT
+from app.services.reply_draft_review import REPLY_DRAFT_APPROVED_AUDIT_EVENT
+from app.services.reply_draft_send import (
+    FOLLOW_UP_COMPLETED_AUDIT_EVENT,
+    REPLY_SENT_AUDIT_EVENT,
+)
 
 
 def _audit(
@@ -33,6 +38,7 @@ def _audit(
         occurred_at=occurred_at,
         project_id=project_id,
         correspondence_event_id=uuid4(),
+        requirement_id=None,
         ai_proposal_id=uuid4(),
         policy_evaluation_id=uuid4(),
         state_transition_id=transition_id,
@@ -100,6 +106,45 @@ def test_follow_up_due_audit_maps_to_one_business_activity_event():
     assert activity.events[0].event_type is ProjectActivityType.FOLLOW_UP_BECAME_DUE
     assert activity.events[0].summary == "Follow-up became due."
     assert activity.events[0].requirement_id == requirement_id
+
+
+def test_reply_draft_approval_is_derived_as_human_project_activity():
+    project_id = uuid4()
+    requirement_id = uuid4()
+    audit = _audit(
+        REPLY_DRAFT_APPROVED_AUDIT_EVENT,
+        datetime.now(UTC),
+        project_id=project_id,
+        actor_type="authenticated_operator",
+        actor_identifier="operator-subject",
+    )
+    audit.requirement_id = requirement_id
+    service, _ = _service(project_id, [audit])
+
+    event = service.load(project_id).events[0]
+
+    assert event.event_type is ProjectActivityType.REPLY_DRAFT_APPROVED
+    assert event.summary == "Reply draft approved."
+    assert event.authenticated_operator_subject == "operator-subject"
+
+
+def test_reply_delivery_and_follow_up_completion_are_distinct_activity_events():
+    project_id = uuid4()
+    now = datetime.now(UTC)
+    sent = _audit(REPLY_SENT_AUDIT_EVENT, now, project_id=project_id)
+    completed = _audit(
+        FOLLOW_UP_COMPLETED_AUDIT_EVENT,
+        now + timedelta(seconds=1),
+        project_id=project_id,
+    )
+    service, _ = _service(project_id, [completed, sent])
+
+    events = service.load(project_id).events
+
+    assert [event.event_type for event in events] == [
+        ProjectActivityType.REPLY_SENT,
+        ProjectActivityType.FOLLOW_UP_COMPLETED,
+    ]
 
 
 def test_document_filing_is_business_activity_without_unsupported_lineage_link() -> None:

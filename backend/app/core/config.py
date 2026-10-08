@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:5173"
     gmail_enabled: bool = False
     gmail_account_email: str | None = None
+    gmail_reply_message_id_domain: str | None = None
     gmail_label_id: str | None = None
     gmail_initial_after_epoch_seconds: int | None = None
     gmail_credentials_path: Path = Path(".secrets/gmail/credentials.json")
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     google_api_key: SecretStr | None = None
     project_resolver_model: str = "gemini-3.7-flash"
     requirement_reconciler_model: str = "gemini-3.7-flash"
+    reply_drafter_model: str = "gemini-3.7-flash"
     requirement_reconciler_max_requirements: int = Field(default=100, gt=0)
     requirement_reconciler_max_attachments: int = Field(default=20, gt=0)
     requirement_reconciler_max_source_characters: int = Field(
@@ -91,6 +93,28 @@ class Settings(BaseSettings):
             raise ValueError("SUPABASE_AUTH_AUDIENCE must not be blank")
         return value
 
+    @field_validator("gmail_reply_message_id_domain")
+    @classmethod
+    def validate_gmail_reply_message_id_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().lower().rstrip(".")
+        if not value:
+            raise ValueError("GMAIL_REPLY_MESSAGE_ID_DOMAIN must not be blank")
+        if len(value) > 253 or "." not in value:
+            raise ValueError("GMAIL_REPLY_MESSAGE_ID_DOMAIN must be a domain name")
+        labels = value.split(".")
+        if any(
+            not label
+            or len(label) > 63
+            or label.startswith("-")
+            or label.endswith("-")
+            or not all(character.isalnum() or character == "-" for character in label)
+            for label in labels
+        ):
+            raise ValueError("GMAIL_REPLY_MESSAGE_ID_DOMAIN must be a domain name")
+        return value
+
     @field_validator("cors_allowed_origins")
     @classmethod
     def validate_cors_allowed_origins(cls, value: str) -> str:
@@ -122,7 +146,11 @@ class Settings(BaseSettings):
     def cors_origins(self) -> tuple[str, ...]:
         return tuple(self.cors_allowed_origins.split(","))
 
-    @field_validator("project_resolver_model", "requirement_reconciler_model")
+    @field_validator(
+        "project_resolver_model",
+        "requirement_reconciler_model",
+        "reply_drafter_model",
+    )
     @classmethod
     def reject_blank_ai_model(cls, value: str) -> str:
         value = value.strip()

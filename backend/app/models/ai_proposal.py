@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.audit_event import AuditEvent
     from app.models.policy_evaluation import PolicyEvaluation
     from app.models.state_transition import StateTransition
+    from app.models.reply_draft import ReplyDraft
 
 
 class AIProposal(Base):
@@ -73,6 +74,9 @@ class AIProposal(Base):
         back_populates="ai_proposal"
     )
     audit_events: Mapped[list["AuditEvent"]] = relationship(
+        back_populates="ai_proposal"
+    )
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(
         back_populates="ai_proposal"
     )
 

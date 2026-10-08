@@ -15,6 +15,21 @@ def test_gmail_is_optional_by_default() -> None:
         ".secrets/gmail/credentials.json"
     )
     assert settings.gmail_token_path == Path(".secrets/gmail/token.json")
+    assert settings.gmail_reply_message_id_domain is None
+
+
+def test_reply_message_id_domain_is_normalized_and_rejects_invalid_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://example",
+        gmail_reply_message_id_domain=" Replies.Tracework.Example. ",
+    )
+    assert settings.gmail_reply_message_id_domain == "replies.tracework.example"
+
+    with pytest.raises(ValidationError, match="GMAIL_REPLY_MESSAGE_ID_DOMAIN"):
+        Settings(
+            database_url="postgresql+psycopg://example",
+            gmail_reply_message_id_domain="invalid domain",
+        )
 
 
 def test_enabled_gmail_requires_account_label_and_epoch_boundary() -> None:

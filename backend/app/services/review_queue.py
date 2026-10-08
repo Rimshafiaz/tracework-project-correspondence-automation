@@ -7,6 +7,7 @@ from app.contracts.project_resolution_review_queue import (
 )
 from app.contracts.review_queue import (
     PROJECT_RESOLUTION_ALLOWED_ACTIONS,
+    REQUIREMENT_REVIEW_ALLOWED_ACTIONS,
     DocumentRevisionCurrentDocument,
     DocumentRevisionReviewAttachment,
     DocumentRevisionReviewDocument,
@@ -148,6 +149,7 @@ class ReviewQueueQueryService:
             else RequirementChangeReviewReadDetail
         )
         return detail_type(
+            allowed_actions=self._allowed_actions(review),
             review=summary,
             correspondence=correspondence_context,
             handoff=handoff,
@@ -288,9 +290,13 @@ class ReviewQueueQueryService:
 
     @staticmethod
     def _allowed_actions(review):
-        if (
-            review.status is ReviewStatus.PENDING
-            and review.review_type is ReviewType.PROJECT_RESOLUTION
-        ):
+        if review.status is not ReviewStatus.PENDING:
+            return ()
+        if review.review_type is ReviewType.PROJECT_RESOLUTION:
             return PROJECT_RESOLUTION_ALLOWED_ACTIONS
+        if review.review_type in {
+            ReviewType.REQUIREMENT_CHANGE,
+            ReviewType.NEW_REQUIREMENT,
+        }:
+            return REQUIREMENT_REVIEW_ALLOWED_ACTIONS
         return ()

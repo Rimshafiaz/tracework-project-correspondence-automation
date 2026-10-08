@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   getTransitionLineage: vi.fn(),
 }));
 vi.mock("../../api/projects", () => api);
+vi.mock("../../api/replyDrafts", () => ({ getProjectReplyDrafts: vi.fn().mockResolvedValue([]) }));
 
 import { ApiError } from "../../api/client";
 import { activity, workspace } from "../../test/fixtures";

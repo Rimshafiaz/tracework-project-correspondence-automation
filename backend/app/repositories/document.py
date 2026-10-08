@@ -94,6 +94,26 @@ class DocumentRepository:
             statement = statement.with_for_update()
         return tuple(self.session.scalars(statement))
 
+    def list_revision_status_for_project(
+        self,
+        *,
+        project_id: UUID,
+        limit: int,
+    ) -> tuple[Document, ...]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        statement = (
+            select(Document)
+            .where(Document.project_id == project_id)
+            .order_by(
+                Document.revision_decided_at.desc().nullslast(),
+                Document.created_at.desc(),
+                Document.id.desc(),
+            )
+            .limit(limit)
+        )
+        return tuple(self.session.scalars(statement))
+
     def update_revision_metadata(
         self,
         document: Document,

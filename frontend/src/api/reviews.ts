@@ -1,6 +1,7 @@
 import { apiRequest } from "./client";
 import type {
   ReviewDecisionResponse,
+  RequirementReviewDecisionResponse,
   ReviewQueueSummary,
   ReviewReadDetail,
 } from "./types";
@@ -19,6 +20,18 @@ export const assignProjectResolution = (reviewId: string, projectIds: string[]) 
 
 export const rejectProjectResolution = (reviewId: string) =>
   reviewAction(reviewId, "reject", {});
+
+export const approveRequirementReview = (reviewId: string) =>
+  apiRequest<RequirementReviewDecisionResponse>(
+    `/reviews/${encodeURIComponent(reviewId)}/approve`,
+    { method: "POST" },
+  );
+
+export const rejectRequirementReview = (reviewId: string) =>
+  apiRequest<RequirementReviewDecisionResponse>(
+    `/reviews/${encodeURIComponent(reviewId)}/reject`,
+    { method: "POST" },
+  );
 
 function reviewAction(
   reviewId: string,

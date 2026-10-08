@@ -15,6 +15,7 @@ from app.contracts.requirement_reconciliation import RequirementContextSnapshot
 from app.contracts.requirement_review import RequirementReviewHandoff
 from app.contracts.review_queue import (
     PROJECT_RESOLUTION_ALLOWED_ACTIONS,
+    REQUIREMENT_REVIEW_ALLOWED_ACTIONS,
     NewRequirementReviewReadDetail,
     ProjectResolutionReviewReadDetail,
     RequirementChangeReviewReadDetail,
@@ -136,8 +137,8 @@ def test_list_pending_preserves_repository_order_and_exact_capabilities() -> Non
         fourth.id,
     ]
     assert result[0].allowed_actions == PROJECT_RESOLUTION_ALLOWED_ACTIONS
-    assert result[1].allowed_actions == ()
-    assert result[2].allowed_actions == ()
+    assert result[1].allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
+    assert result[2].allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
     assert result[3].allowed_actions == ()
 
 
@@ -203,7 +204,7 @@ def test_requirement_detail_reuses_m12_handoff(review_type, expected_type) -> No
     result = service.get_detail(review.id)
 
     assert isinstance(result, expected_type)
-    assert result.allowed_actions == ()
+    assert result.allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
     assert result.handoff is handoff
     handoff_service.load.assert_called_once_with(policy_id)
     project_query.get_detail.assert_not_called()

@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { ApiError } from "../../api/client";
 import { getProjects } from "../../api/projects";
 import { queryKeys } from "../../api/queryKeys";
-import { approveProjectResolution, assignProjectResolution, getReview, rejectProjectResolution } from "../../api/reviews";
+import { approveProjectResolution, approveRequirementReview, assignProjectResolution, getReview, rejectProjectResolution, rejectRequirementReview } from "../../api/reviews";
 import type { DocumentRevisionReviewDetail, ProjectResolutionReviewDetail, RequirementReviewDetail, ReviewCorrespondence, ReviewProjectCandidate } from "../../api/types";
 import { ErrorState } from "../../components/ErrorState";
 import { TableLoading } from "../../components/LoadingState";
@@ -100,13 +100,24 @@ function ProjectResolutionReview({ detail }: { detail: ProjectResolutionReviewDe
 function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
   const snapshots = new Map(detail.handoff.m11_snapshot.requirements.map((item) => [item.requirement_id, item]));
   const current = new Map(detail.handoff.current_requirements.map((item) => [item.requirement_id, item]));
+  const action = useMutation({
+    mutationFn: (kind: "approve" | "reject") => kind === "approve"
+      ? approveRequirementReview(detail.review.review_item_id)
+      : rejectRequirementReview(detail.review.review_item_id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reviews });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.review(detail.review.review_item_id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projectActivity(detail.handoff.project_id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projectWorkspace(detail.handoff.project_id) });
+    },
+  });
   return (
     <article className="review-detail requirement-review-detail">
       <Link className="back-link" to="/reviews">Reviews</Link>
       <header className="requirement-review-heading">
         <div>
           <h1>Requirement review</h1>
-          <p>Proposed change held for inspection. No authoritative update has been applied.</p>
+          <p>{detail.review.status === "PENDING" ? "Proposed change awaits a human decision. No authoritative update has been applied." : "This review has been resolved."}</p>
         </div>
         <p>{reviewTypeLabel(detail.review_type)}<br />{formatDateTime(detail.review.created_at)}</p>
       </header>
@@ -126,6 +137,11 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
       <RequirementReviewSection title="Review basis">
         <dl className="review-basis-record"><div><dt>Decision</dt><dd>{detail.handoff.transition_preview.policy.decision}</dd></div><div><dt>Reason</dt><dd>{detail.handoff.transition_preview.policy.reasons.join(" ") || "No reason recorded"}</dd></div>{detail.handoff.reconciliation.concerns.map((item, index) => <div key={`concern-${index}`}><dt>Concern</dt><dd>{item.description}</dd></div>)}{detail.handoff.reconciliation.conflicts.map((item, index) => <div key={`conflict-${index}`}><dt>Conflict</dt><dd>{item.description}</dd></div>)}<div><dt>Technical definition</dt><dd><span className="technical-id">{detail.handoff.transition_preview.policy.policy_version}</span>{detail.handoff.transition_preview.policy.triggered_rule_ids.map((id) => <span className="technical-id" key={id}>{id}</span>)}</dd></div></dl>
       </RequirementReviewSection>
+      {action.isError ? <p className="form-error" role="alert">{reviewActionError(action.error)}</p> : null}
+      {detail.allowed_actions.length ? <div className="decision-actions">
+        {detail.allowed_actions.includes("REJECT") ? <button className="danger-button" type="button" disabled={action.isPending} onClick={() => action.mutate("reject")}>Reject</button> : null}
+        {detail.allowed_actions.includes("APPROVE") ? <button className="primary-button" type="button" disabled={action.isPending} onClick={() => action.mutate("approve")}>Approve</button> : null}
+      </div> : null}
       </div>
     </article>
   );

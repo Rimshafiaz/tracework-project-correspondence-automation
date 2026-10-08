@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.correspondence_event import CorrespondenceEvent
+from app.models.correspondence_project_link import CorrespondenceProjectLink
 from app.models.enums import CorrespondenceProcessingState
 
 
@@ -74,6 +75,30 @@ class CorrespondenceEventRepository:
                 == external_conversation_id,
             )
             .order_by(CorrespondenceEvent.received_at, CorrespondenceEvent.id)
+        )
+        return self.session.scalars(statement).all()
+
+    def list_authoritatively_linked_for_project(
+        self,
+        *,
+        project_id: UUID,
+        limit: int,
+    ) -> Sequence[CorrespondenceEvent]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        statement = (
+            select(CorrespondenceEvent)
+            .join(
+                CorrespondenceProjectLink,
+                CorrespondenceProjectLink.correspondence_event_id
+                == CorrespondenceEvent.id,
+            )
+            .where(CorrespondenceProjectLink.project_id == project_id)
+            .order_by(
+                CorrespondenceEvent.received_at.desc(),
+                CorrespondenceEvent.id.desc(),
+            )
+            .limit(limit)
         )
         return self.session.scalars(statement).all()
 

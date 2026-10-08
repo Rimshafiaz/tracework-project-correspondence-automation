@@ -16,6 +16,10 @@ from app.services.policy.requirement_authorization import REQUIREMENT_POLICY_AUT
 from app.services.project_resolution_review_creation import REVIEW_CREATED_AUDIT_EVENT
 from app.services.project_resolution_review_decision import REVIEW_RESOLVED_AUDIT_EVENT
 from app.services.requirement_review_creation import REQUIREMENT_REVIEW_CREATED_AUDIT_EVENT
+from app.services.requirement_review_decision import (
+    REQUIREMENT_REVIEW_APPROVED_AUDIT_EVENT,
+    REQUIREMENT_REVIEW_REJECTED_AUDIT_EVENT,
+)
 from app.services.document_filing import DOCUMENT_FILED_AUDIT_EVENT
 from app.services.document_revision import (
     DOCUMENT_REVISION_DUPLICATE_RECORDED,
@@ -24,6 +28,11 @@ from app.services.document_revision import (
     DOCUMENT_REVISION_SELECTED_CURRENT,
 )
 from app.services.follow_up_due import FOLLOW_UP_BECAME_DUE_AUDIT_EVENT
+from app.services.reply_draft_review import REPLY_DRAFT_APPROVED_AUDIT_EVENT
+from app.services.reply_draft_send import (
+    FOLLOW_UP_COMPLETED_AUDIT_EVENT,
+    REPLY_SENT_AUDIT_EVENT,
+)
 
 REQUIREMENT_RECONCILIATION_PROPOSED_AUDIT_EVENT = "requirement_reconciliation_proposed"
 
@@ -116,6 +125,26 @@ class ProjectActivityService:
                     summary,
                 ),
             )
+        if audit.event_type == REQUIREMENT_REVIEW_APPROVED_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.REQUIREMENT_REVIEW_APPROVED,
+                    "Requirement review approved and applied.",
+                    requirement_id=audit.requirement_id,
+                ),
+            )
+        if audit.event_type == REQUIREMENT_REVIEW_REJECTED_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.REQUIREMENT_REVIEW_REJECTED,
+                    "Requirement review rejected.",
+                    requirement_id=audit.requirement_id,
+                ),
+            )
         if audit.event_type == REQUIREMENT_POLICY_AUTO_APPLIED_AUDIT_EVENT:
             return self._requirement_changes(project_id, audit)
         if audit.event_type == DOCUMENT_FILED_AUDIT_EVENT:
@@ -141,6 +170,36 @@ class ProjectActivityService:
                     project_id,
                     ProjectActivityType.FOLLOW_UP_BECAME_DUE,
                     "Follow-up became due.",
+                    requirement_id=audit.requirement_id,
+                ),
+            )
+        if audit.event_type == REPLY_DRAFT_APPROVED_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.REPLY_DRAFT_APPROVED,
+                    "Reply draft approved.",
+                    requirement_id=audit.requirement_id,
+                ),
+            )
+        if audit.event_type == REPLY_SENT_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.REPLY_SENT,
+                    "Reply sent.",
+                    requirement_id=audit.requirement_id,
+                ),
+            )
+        if audit.event_type == FOLLOW_UP_COMPLETED_AUDIT_EVENT:
+            return (
+                self._event(
+                    audit,
+                    project_id,
+                    ProjectActivityType.FOLLOW_UP_COMPLETED,
+                    "Follow-up completed after reply delivery.",
                     requirement_id=audit.requirement_id,
                 ),
             )

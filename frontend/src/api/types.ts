@@ -44,6 +44,50 @@ export interface ProjectWorkspace {
   requirements: ProjectRequirement[];
 }
 
+export type ReplyDraftStatus = "GENERATED" | "APPROVED" | "REJECTED" | "SEND_PENDING" | "RETRYABLE_FAILURE" | "SENT";
+export type ReplyType = "ACKNOWLEDGEMENT" | "CLARIFICATION_REQUEST" | "OVERDUE_FOLLOW_UP";
+
+export interface ReplyDraftContent { subject: string; body: string; }
+export interface ReplyDraft {
+  id: string;
+  follow_up_id: string;
+  project_id: string;
+  requirement_id: string;
+  ai_proposal_id: string | null;
+  source_correspondence_event_id: string | null;
+  target_correspondence_event_id: string | null;
+  project_contact_id: string | null;
+  reply_type: ReplyType;
+  generated: ReplyDraftContent;
+  edited: ReplyDraftContent | null;
+  effective: ReplyDraftContent;
+  status: ReplyDraftStatus;
+  recipient_email: string | null;
+  gmail_thread_id: string | null;
+  source_gmail_message_id: string | null;
+  approved_at: string | null;
+  approved_by_subject: string | null;
+  rejected_at: string | null;
+  send_attempt_id: string | null;
+  send_attempted_at: string | null;
+  send_failure_code: string | null;
+  sent_at: string | null;
+  gmail_message_id: string | null;
+  gmail_sent_thread_id: string | null;
+  can_edit: boolean;
+  can_approve: boolean;
+  can_reject: boolean;
+  can_send: boolean;
+  can_retry_send: boolean;
+  send_attention_required: boolean;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReplyDraftSendStatus = "SENT_NOW" | "RECONCILED_SENT" | "ALREADY_SENT" | "SEND_STILL_PENDING" | "RETRYABLE_FAILURE" | "AMBIGUOUS_RECOVERY" | "ACTION_REQUIRED";
+export interface ReplyDraftSendResult { status: ReplyDraftSendStatus; reply_draft_id: string; gmail_message_id: string | null; gmail_thread_id: string | null; failure_code: string | null; }
+
 export interface ProjectSetupIdentifierInput {
   identifier_type: string;
   display_value: string;
@@ -167,7 +211,7 @@ export interface ProjectResolutionReviewDetail {
 
 export interface RequirementReviewDetail {
   review_type: "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT";
-  allowed_actions: [];
+  allowed_actions: ReviewAllowedAction[];
   review: ReviewQueueSummary;
   correspondence: ReviewCorrespondence;
   handoff: {
@@ -278,6 +322,15 @@ export interface ReviewDecisionResponse {
   idempotent_replay: boolean;
 }
 
+export interface RequirementReviewDecisionResponse {
+  review_item_id: string;
+  status: ReviewStatus;
+  action: "APPROVE" | "REJECT";
+  applied_requirement_ids: string[];
+  follow_up_ids: string[];
+  idempotent_replay: boolean;
+}
+
 export type ProjectActivityType =
   | "CORRESPONDENCE_LINKED"
   | "PROJECT_RESOLUTION_REVIEW_CREATED"
@@ -285,6 +338,8 @@ export type ProjectActivityType =
   | "REQUIREMENT_CHANGE_PROPOSED"
   | "REQUIREMENT_CHANGE_APPLIED"
   | "REQUIREMENT_REVIEW_CREATED"
+  | "REQUIREMENT_REVIEW_APPROVED"
+  | "REQUIREMENT_REVIEW_REJECTED"
   | "DOCUMENT_FILED"
   | "DOCUMENT_REVISION_SELECTED_CURRENT"
   | "DOCUMENT_REVISION_RETAINED_HISTORICAL"

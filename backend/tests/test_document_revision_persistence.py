@@ -42,7 +42,7 @@ def test_revision_migration_chains_from_0005_and_leaves_one_head() -> None:
 
     assert migration.revision == "0006"
     assert migration.down_revision == "0005"
-    assert heads == ["0008"]
+    assert heads == ["0010"]
 
 
 @pytest.mark.skipif(

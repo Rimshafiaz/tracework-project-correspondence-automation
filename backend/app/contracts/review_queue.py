@@ -26,6 +26,11 @@ PROJECT_RESOLUTION_ALLOWED_ACTIONS = (
     ReviewAllowedAction.REJECT,
 )
 
+REQUIREMENT_REVIEW_ALLOWED_ACTIONS = (
+    ReviewAllowedAction.APPROVE,
+    ReviewAllowedAction.REJECT,
+)
+
 
 class ReviewQueueSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -49,12 +54,7 @@ class ReviewQueueSummary(BaseModel):
 
     @model_validator(mode="after")
     def require_exact_capabilities(self) -> "ReviewQueueSummary":
-        expected = (
-            PROJECT_RESOLUTION_ALLOWED_ACTIONS
-            if self.status is ReviewStatus.PENDING
-            and self.review_type is ReviewType.PROJECT_RESOLUTION
-            else ()
-        )
+        expected = _allowed_actions(self.status, self.review_type)
         if self.allowed_actions != expected:
             raise ValueError("allowed review actions do not match review capability")
         return self
@@ -90,9 +90,12 @@ class _RequirementReviewReadDetail(BaseModel):
     handoff: RequirementReviewHandoff
 
     @model_validator(mode="after")
-    def require_read_only_consistency(self) -> "_RequirementReviewReadDetail":
-        if self.allowed_actions:
-            raise ValueError("requirement reviews are read-only")
+    def require_action_consistency(self) -> "_RequirementReviewReadDetail":
+        if self.allowed_actions != _allowed_actions(
+            self.review.status,
+            self.review.review_type,
+        ):
+            raise ValueError("requirement review actions are invalid")
         if self.review.review_type not in {
             ReviewType.REQUIREMENT_CHANGE,
             ReviewType.NEW_REQUIREMENT,
@@ -205,3 +208,16 @@ ReviewReadDetail = Annotated[
     | DocumentRevisionReviewReadDetail,
     Field(discriminator="review_type"),
 ]
+
+
+def _allowed_actions(
+    status: ReviewStatus,
+    review_type: ReviewType,
+) -> tuple[ReviewAllowedAction, ...]:
+    if status is not ReviewStatus.PENDING:
+        return ()
+    if review_type is ReviewType.PROJECT_RESOLUTION:
+        return PROJECT_RESOLUTION_ALLOWED_ACTIONS
+    if review_type in {ReviewType.REQUIREMENT_CHANGE, ReviewType.NEW_REQUIREMENT}:
+        return REQUIREMENT_REVIEW_ALLOWED_ACTIONS
+    return ()

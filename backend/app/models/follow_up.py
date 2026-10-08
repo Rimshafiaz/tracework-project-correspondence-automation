@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.requirement import Requirement
     from app.models.state_transition import StateTransition
+    from app.models.reply_draft import ReplyDraft
 
 
 class FollowUp(Base):
@@ -138,3 +139,4 @@ class FollowUp(Base):
         remote_side="FollowUp.id",
         foreign_keys=[superseded_by_follow_up_id],
     )
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="follow_up")

@@ -213,7 +213,26 @@ def test_list_valid_requirement_evidence_is_project_scoped() -> None:
 
     statement = session.scalars.call_args.args[0]
     assert len(statement._where_criteria) == 3
-    assert len(statement._order_by_clauses) == 2
+    assert "ORDER BY evidence_items.created_at, evidence_items.id" in str(statement)
+
+
+def test_list_valid_requirement_evidence_accepts_a_positive_bound():
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+    repository = LineageRepository(session)
+
+    assert repository.list_valid_evidence_for_requirements(
+        project_id=uuid4(),
+        requirement_ids={uuid4()},
+        limit=13,
+    ) == []
+
+    statement = session.scalars.call_args.args[0]
+    assert "LIMIT" in str(statement)
+    with pytest.raises(ValueError, match="positive"):
+        repository.list_valid_evidence_for_requirements(
+            project_id=uuid4(), requirement_ids={uuid4()}, limit=0
+        )
 
 
 def test_transition_and_review_start_in_preview_states() -> None:

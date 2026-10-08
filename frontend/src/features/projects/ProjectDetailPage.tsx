@@ -4,11 +4,13 @@ import { Link, useParams } from "react-router";
 
 import { ApiError } from "../../api/client";
 import { getProjectActivity, getProjectWorkspace } from "../../api/projects";
+import { getProjectReplyDrafts } from "../../api/replyDrafts";
 import { queryKeys } from "../../api/queryKeys";
 import { ErrorState } from "../../components/ErrorState";
 import { TableLoading } from "../../components/LoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { EvidenceLineage, ProjectActivity, ProjectWorkspace } from "../../api/types";
+import type { ReplyDraft } from "../../api/types";
 import { ProjectActivityList } from "../activity/ProjectActivityList";
 import { DevelopmentLineagePanel, LineagePanel } from "../lineage/LineagePanel";
 import { RequirementsLedger } from "./RequirementsLedger";
@@ -25,6 +27,11 @@ export function ProjectDetailPage() {
   const activity = useQuery({
     queryKey: queryKeys.projectActivity(projectId),
     queryFn: () => getProjectActivity(projectId),
+    enabled: Boolean(projectId),
+  });
+  const replyDrafts = useQuery({
+    queryKey: queryKeys.projectReplyDrafts(projectId),
+    queryFn: () => getProjectReplyDrafts(projectId),
     enabled: Boolean(projectId),
   });
 
@@ -67,6 +74,7 @@ export function ProjectDetailPage() {
       onViewEvidence={setTransitionId}
       lineageTransitionId={transitionId}
       onCloseLineage={() => setTransitionId(null)}
+      replyDrafts={replyDrafts.data ?? []}
     />
   );
 }
@@ -82,6 +90,7 @@ export function ProjectWorkspaceView({
   onCloseLineage = () => undefined,
   backHref = "/projects",
   developmentPreviewLineage,
+  replyDrafts = [],
 }: {
   workspace: ProjectWorkspace;
   activity: ProjectActivity | null;
@@ -93,6 +102,7 @@ export function ProjectWorkspaceView({
   onCloseLineage?: () => void;
   backHref?: string;
   developmentPreviewLineage?: EvidenceLineage;
+  replyDrafts?: ReplyDraft[];
 }) {
   const { project, identifiers, contacts, requirements } = workspace;
   const verifiedIdentifiers = identifiers.filter((item) => item.verified);
@@ -112,6 +122,10 @@ export function ProjectWorkspaceView({
 
       <div className="workspace-registers">
         <RequirementsLedger requirements={requirements} />
+        <section className="workspace-section" aria-labelledby="reply-drafts-title">
+          <div className="section-heading-row"><h2 id="reply-drafts-title">Reply drafts</h2></div>
+          {replyDrafts.length ? <ul>{replyDrafts.map((draft) => <li key={draft.id}><Link to={`/reply-drafts/${draft.id}`}>{draft.effective.subject}</Link> <StatusBadge status={draft.status} /></li>)}</ul> : <p className="empty-state">No reply drafts are available for this project.</p>}
+        </section>
         <section className="workspace-section history-register" aria-labelledby="activity-title">
           <div className="section-heading-row"><h2 id="activity-title">Project history</h2></div>
           {activityLoading ? <TableLoading rows={3} /> : null}
