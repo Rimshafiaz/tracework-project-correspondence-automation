@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     docx_max_tables: int = Field(default=500, gt=0)
     docx_max_table_cells: int = Field(default=50_000, gt=0)
     google_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
+    project_resolver_provider: Literal["gemini", "groq"] = "gemini"
+    requirement_reconciler_provider: Literal["gemini", "groq"] = "gemini"
+    reply_drafter_provider: Literal["gemini", "groq"] = "gemini"
     project_resolver_model: str = "gemini-3.7-flash"
     requirement_reconciler_model: str = "gemini-3.7-flash"
     reply_drafter_model: str = "gemini-3.7-flash"

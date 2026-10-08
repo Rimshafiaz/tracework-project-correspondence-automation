@@ -1,6 +1,7 @@
 import pytest
 from pydantic import SecretStr, ValidationError
 from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.groq import GroqModel
 
 from app.ai.prompts.requirement_reconciler import REQUIREMENT_RECONCILER_PROMPT_VERSION
 from app.ai.requirement_reconciler import build_requirement_reconciler_agent
@@ -33,6 +34,31 @@ def test_requirement_reconciler_requires_api_key_only_when_built() -> None:
         build_requirement_reconciler_agent(settings)
 
 
+def test_requirement_reconciler_supports_groq_without_google_key() -> None:
+    agent = build_requirement_reconciler_agent(
+        Settings(
+            database_url=DATABASE_URL,
+            requirement_reconciler_provider="groq",
+            requirement_reconciler_model="openai/gpt-oss-120b",
+            groq_api_key=SecretStr("test-key"),
+        )
+    )
+
+    assert isinstance(agent.model, GroqModel)
+    assert agent.model.model_name == "openai/gpt-oss-120b"
+    assert agent.output_type is RequirementReconciliation
+
+    with pytest.raises(ValueError, match="GROQ_API_KEY"):
+        build_requirement_reconciler_agent(
+            Settings(
+                database_url=DATABASE_URL,
+                _env_file=None,
+                requirement_reconciler_provider="groq",
+                requirement_reconciler_model="openai/gpt-oss-120b",
+            )
+        )
+
+
 def test_requirement_reconciler_model_name_cannot_be_blank() -> None:
     with pytest.raises(ValidationError, match="AI model name"):
         Settings(
@@ -48,3 +74,8 @@ def test_reply_drafter_model_name_uses_default_and_rejects_blank() -> None:
             database_url=DATABASE_URL,
             reply_drafter_model=" ",
         )
+
+
+def test_agent_provider_values_are_limited_to_gemini_or_groq() -> None:
+    with pytest.raises(ValidationError, match="project_resolver_provider"):
+        Settings(database_url=DATABASE_URL, project_resolver_provider="other")

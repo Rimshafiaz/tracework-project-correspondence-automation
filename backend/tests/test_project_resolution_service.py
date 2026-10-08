@@ -5,8 +5,9 @@ from uuid import UUID, uuid4
 
 import pytest
 import httpx
+from groq import APIConnectionError as GroqAPIConnectionError
 from pydantic_ai import Agent, ModelResponse, ToolCallPart, UnexpectedModelBehavior
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.ai.schemas import CandidateSignalReference, EvidenceConflict, ProjectResolution, ProjectResolverInput, ResolutionConcern, ResolutionEvidence, ResolutionStatus, ResolverAttachment, ResolverCorrespondence, ResolverSourceField, SourceTextEvidence
@@ -606,6 +607,15 @@ def test_temporary_transport_failure_is_retried(monkeypatch) -> None:
     assert result.resolution == resolution
     assert calls == [1, 2]
     assert sleeps == [0.5]
+
+
+def test_groq_sdk_connection_error_is_retryable() -> None:
+    error = ModelAPIError(model_name="groq:test", message="connection failed")
+    error.__cause__ = GroqAPIConnectionError(
+        request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    )
+
+    assert ProjectResolutionService._is_retryable_provider_error(error) is True
 
 
 def test_three_transient_provider_failures_propagate_final_error(

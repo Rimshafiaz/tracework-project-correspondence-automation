@@ -1,7 +1,6 @@
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
-from pydantic_ai.providers.google import GoogleProvider
 
+from app.ai.provider_model import build_agent_model
 from app.ai.prompts.reply_drafter import REPLY_DRAFTER_INSTRUCTIONS
 from app.ai.reply_drafter_context import (
     ReplyDrafterDeps,
@@ -149,19 +148,18 @@ def list_document_revision_status(ctx: RunContext[ReplyDrafterDeps]):
 
 
 def build_reply_drafter_agent(settings: Settings) -> Agent[ReplyDrafterDeps, ReplyDraftProposal]:
-    if settings.google_api_key is None:
-        raise ValueError("GOOGLE_API_KEY is required to build the Reply Drafter Agent")
-
-    model = GoogleModel(
-        settings.reply_drafter_model,
-        provider=GoogleProvider(api_key=settings.google_api_key.get_secret_value()),
+    model, model_settings = build_agent_model(
+        provider=settings.reply_drafter_provider,
+        model_name=settings.reply_drafter_model,
+        settings=settings,
+        agent_name="Reply Drafter",
     )
     return Agent(
         model,
         deps_type=ReplyDrafterDeps,
         output_type=ReplyDraftProposal,
         instructions=REPLY_DRAFTER_INSTRUCTIONS,
-        model_settings=GoogleModelSettings(temperature=0),
+        model_settings=model_settings,
         retries={"output": 2},
         tools=(
             get_due_follow_up,

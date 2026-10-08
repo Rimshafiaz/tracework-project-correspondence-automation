@@ -6,10 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+import httpx
+from groq import APIConnectionError as GroqAPIConnectionError
 from pydantic import SecretStr
 from pydantic_ai import UsageLimits
-from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.usage import RunUsage
 
 from app.ai.reply_drafter import (
@@ -199,6 +202,40 @@ def test_agent_has_exactly_six_zero_argument_scoped_tools():
         assert tuple(inspect.signature(tool).parameters) == ("ctx",)
 
 
+def test_reply_drafter_supports_groq_without_google_key() -> None:
+    agent = build_reply_drafter_agent(
+        Settings(
+            database_url=DATABASE_URL,
+            reply_drafter_provider="groq",
+            reply_drafter_model="openai/gpt-oss-120b",
+            groq_api_key=SecretStr("test-key"),
+        )
+    )
+
+    assert isinstance(agent.model, GroqModel)
+    assert agent.model.model_name == "openai/gpt-oss-120b"
+    assert agent.output_type is ReplyDraftProposal
+    assert agent._max_output_retries == 2
+    assert set(agent._function_toolset.tools) == {
+        "get_due_follow_up",
+        "get_project_summary",
+        "get_requirement_context",
+        "list_recent_correspondence",
+        "list_follow_up_history",
+        "list_document_revision_status",
+    }
+
+    with pytest.raises(ValueError, match="GROQ_API_KEY"):
+        build_reply_drafter_agent(
+            Settings(
+                database_url=DATABASE_URL,
+                _env_file=None,
+                reply_drafter_provider="groq",
+                reply_drafter_model="openai/gpt-oss-120b",
+            )
+        )
+
+
 def test_tools_read_only_matching_context_methods_and_preserve_trace_order():
     scoped, follow_up_id, evidence_id, correspondence_id, document_id = _context()
     ctx = SimpleNamespace(deps=_deps(scoped, follow_up_id))
@@ -309,6 +346,15 @@ def test_provider_failures_and_native_usage_limit_failures_propagate():
     with pytest.raises(UsageLimitExceeded):
         asyncio.run(ReplyDrafterRunner(agent=usage_limited, model_identifier="gemini-test").run(scoped))
     assert usage_limited.run.await_count == 1
+
+
+def test_reply_drafter_retries_wrapped_groq_connection_errors() -> None:
+    error = ModelAPIError(model_name="groq:test", message="connection failed")
+    error.__cause__ = GroqAPIConnectionError(
+        request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    )
+
+    assert ReplyDrafterRunner._is_retryable_provider_error(error) is True
 
 
 def test_final_transient_provider_failure_uses_all_attempts_then_propagates(monkeypatch):
