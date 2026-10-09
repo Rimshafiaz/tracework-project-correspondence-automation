@@ -1,10 +1,38 @@
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, computed_field, model_validator
 
 from app.evaluation.actions import ActionType
-from app.models.enums import EvidenceValidity, PolicyDecision, RequirementState
+from app.ai.requirement_schemas import RequirementCorrectionKind
+from app.contracts.requirement_review_decision import RequirementReviewAction
+from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, RequirementState
+
+
+class EvaluationStage(StrEnum):
+    PROJECT_RESOLUTION = "PROJECT_RESOLUTION"
+    REQUIREMENT_RECONCILIATION = "REQUIREMENT_RECONCILIATION"
+    POLICY = "POLICY"
+    REVIEW_APPLICATION = "REVIEW_APPLICATION"
+
+
+class EvaluationCorrection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requirement_id: str = Field(min_length=1, pattern=r"\S")
+    kind: RequirementCorrectionKind
+    target_evidence_ids: tuple[str, ...] = Field(min_length=1)
+    proposed_state: RequirementState | None = None
+    proposed_expected_date: date | None = None
+
+    @model_validator(mode="after")
+    def require_unique_targets(self) -> "EvaluationCorrection":
+        if any(not item.strip() for item in self.target_evidence_ids):
+            raise ValueError("target evidence IDs must not be blank")
+        if len(set(self.target_evidence_ids)) != len(self.target_evidence_ids):
+            raise ValueError("target evidence IDs must be unique")
+        return self
 
 
 class EvaluationAttachment(BaseModel):
@@ -172,9 +200,16 @@ class EvaluationOutcome(BaseModel):
     conflicts: tuple[ExpectedConflict, ...] = ()
     new_requirements: tuple[ExpectedNewRequirement, ...] = ()
     review_required: bool
+    proposal_type: ProposalType | None = None
+    evidence_ids: tuple[str, ...] | None = None
+    corrections: tuple[EvaluationCorrection, ...] = ()
+    review_application_status: Literal["APPROVED", "REJECTED", "BLOCKED"] | None = None
+    application_block_code: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
     @model_validator(mode="after")
     def validate_expected_result(self) -> "EvaluationOutcome":
+        if self.application_block_code is not None and self.review_application_status != "BLOCKED":
+            raise ValueError("an application block code requires BLOCKED review application")
         project_count = len(self.project_ids)
         if self.project_resolution is ExpectedProjectResolution.MATCHED and project_count != 1:
             raise ValueError("MATCHED requires exactly one project ID")
@@ -198,7 +233,7 @@ class EvaluationOutcome(BaseModel):
 
 
 class EvaluationExpectedOutput(EvaluationOutcome):
-    pass
+    policy_decision: PolicyDecision | None = None
 
 
 class ActionExpectation(BaseModel):
@@ -263,19 +298,20 @@ class EvaluationPolicyResult(BaseModel):
 
 class EvaluationSystemResult(EvaluationOutcome):
     system: EvaluatedSystem
+    stages: tuple[EvaluationStage, ...] = (EvaluationStage.POLICY,)
     actions: tuple[ActionExpectation, ...] = ()
     policy: EvaluationPolicyResult | None = None
 
     @model_validator(mode="after")
     def require_policy_where_applied(self) -> "EvaluationSystemResult":
-        uses_policy = self.system in {
+        uses_policy = EvaluationStage.POLICY in self.stages and self.system in {
             EvaluatedSystem.ONE_SHOT_WITH_POLICY,
             EvaluatedSystem.TRACEWORK,
         }
         if uses_policy and self.policy is None:
             raise ValueError("policy-enabled systems must report their policy result")
         if not uses_policy and self.policy is not None:
-            raise ValueError("the one-shot baseline cannot report a policy result")
+            raise ValueError("a system without the policy stage cannot report a policy result")
         return self
 
 
@@ -293,22 +329,44 @@ class EvaluationCategory(StrEnum):
 
 
 class EvaluationCase(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    case_id: str
-    title: str
+    case_id: str = Field(min_length=1, pattern=r"\S")
+    title: str = Field(min_length=1, pattern=r"\S")
     category: EvaluationCategory
     input: EvaluationInput
     expected: EvaluationExpectedOutput
     safety: SafetyExpectations
+    stages: tuple[EvaluationStage, ...] = Field(default=(
+        EvaluationStage.PROJECT_RESOLUTION,
+        EvaluationStage.REQUIREMENT_RECONCILIATION,
+        EvaluationStage.POLICY,
+    ), min_length=1)
+    review_action: RequirementReviewAction | None = None
 
     @model_validator(mode="after")
     def validate_ground_truth_references(self) -> "EvaluationCase":
+        if len(set(self.stages)) != len(self.stages):
+            raise ValueError("evaluation stages must be unique")
+        if (EvaluationStage.REVIEW_APPLICATION in self.stages) != (self.review_action is not None):
+            raise ValueError("review application requires an explicit human action and stage")
+        if self.expected.review_application_status is not None and self.review_action is None:
+            raise ValueError("expected review application requires an explicit action")
         project_ids = {project.project_id for project in self.input.candidate_projects}
         requirement_ids = {
             requirement.requirement_id for requirement in self.input.requirements
         }
         evidence_ids = {evidence.evidence_id for evidence in self.input.evidence}
+        if self.expected.evidence_ids is not None:
+            if not set(self.expected.evidence_ids).issubset(evidence_ids):
+                raise ValueError("expected evidence must exist in the input")
+            self.input._require_unique("expected evidence IDs", list(self.expected.evidence_ids))
+        self.input._require_unique("correction requirement IDs", [item.requirement_id for item in self.expected.corrections])
+        for correction in self.expected.corrections:
+            if correction.requirement_id not in requirement_ids:
+                raise ValueError("correction requirements must exist in the input")
+            if not set(correction.target_evidence_ids).issubset(evidence_ids):
+                raise ValueError("correction evidence must exist in the input")
         if any(project_id not in project_ids for project_id in self.expected.project_ids):
             raise ValueError("expected projects must exist in the evaluation input")
         if any(
@@ -334,3 +392,83 @@ class EvaluationCase(BaseModel):
         ):
             raise ValueError("new-requirement evidence must exist in the input")
         return self
+
+
+class EvaluationStatus(StrEnum):
+    UNSCORED = "UNSCORED"
+    PASS = "PASS"
+    FAIL = "FAIL"
+    ERROR = "ERROR"
+
+
+class EvaluationFailedCheck(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    check: str = Field(min_length=1, pattern=r"\S")
+    expected: JsonValue
+    actual: JsonValue
+
+
+class EvaluationModelMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    stage: EvaluationStage
+    provider: str = Field(min_length=1, pattern=r"\S")
+    model: str = Field(min_length=1, pattern=r"\S")
+    prompt_version: str = Field(min_length=1, pattern=r"\S")
+
+
+class EvaluationCaseResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    case_id: str = Field(min_length=1, pattern=r"\S")
+    status: EvaluationStatus
+    actual: EvaluationSystemResult | None = None
+    failed_checks: tuple[EvaluationFailedCheck, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+    models: tuple[EvaluationModelMetadata, ...] = ()
+    error: str | None = Field(default=None, min_length=1, pattern=r"\S")
+
+    @model_validator(mode="after")
+    def require_consistent_result(self) -> "EvaluationCaseResult":
+        if self.status is EvaluationStatus.ERROR:
+            if self.error is None or self.failed_checks:
+                raise ValueError("ERROR requires an execution error, not failed checks")
+        elif self.actual is None or self.error is not None:
+            raise ValueError("UNSCORED/PASS/FAIL requires an actual outcome and no execution error")
+        elif (self.status is EvaluationStatus.FAIL) != bool(self.failed_checks):
+            raise ValueError("FAIL requires failed checks; UNSCORED/PASS forbid them")
+        return self
+
+
+class EvaluationBatchResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    results: tuple[EvaluationCaseResult, ...]
+
+    @model_validator(mode="after")
+    def require_final_results(self) -> "EvaluationBatchResult":
+        if any(result.status is EvaluationStatus.UNSCORED for result in self.results):
+            raise ValueError("batch results must be scored or ERROR")
+        return self
+
+    @computed_field
+    @property
+    def total(self) -> int:
+        return len(self.results)
+
+    @computed_field
+    @property
+    def passed(self) -> int:
+        return sum(result.status is EvaluationStatus.PASS for result in self.results)
+
+    @computed_field
+    @property
+    def failed(self) -> int:
+        return sum(result.status is EvaluationStatus.FAIL for result in self.results)
+
+    @computed_field
+    @property
+    def errors(self) -> int:
+        return sum(result.status is EvaluationStatus.ERROR for result in self.results)
