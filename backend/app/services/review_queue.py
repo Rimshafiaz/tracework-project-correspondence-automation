@@ -13,6 +13,7 @@ from app.contracts.review_queue import (
     DocumentRevisionReviewDocument,
     DocumentRevisionReviewReadDetail,
     NewRequirementReviewReadDetail,
+    RetractionCorrectionReviewReadDetail,
     ProjectResolutionReviewReadDetail,
     RequirementChangeReviewReadDetail,
     ReviewQueueSummary,
@@ -43,6 +44,7 @@ SUPPORTED_REVIEW_TYPES = {
     ReviewType.PROJECT_RESOLUTION,
     ReviewType.REQUIREMENT_CHANGE,
     ReviewType.NEW_REQUIREMENT,
+    ReviewType.RETRACTION_CORRECTION,
     ReviewType.DOCUMENT_REVISION,
 }
 
@@ -143,11 +145,11 @@ class ReviewQueueQueryService:
             received_at=correspondence.received_at,
         )
         summary = self._summary(review)
-        detail_type = (
-            NewRequirementReviewReadDetail
-            if review.review_type is ReviewType.NEW_REQUIREMENT
-            else RequirementChangeReviewReadDetail
-        )
+        detail_type = {
+            ReviewType.NEW_REQUIREMENT: NewRequirementReviewReadDetail,
+            ReviewType.RETRACTION_CORRECTION: RetractionCorrectionReviewReadDetail,
+            ReviewType.REQUIREMENT_CHANGE: RequirementChangeReviewReadDetail,
+        }[review.review_type]
         return detail_type(
             allowed_actions=self._allowed_actions(review),
             review=summary,
@@ -297,6 +299,7 @@ class ReviewQueueQueryService:
         if review.review_type in {
             ReviewType.REQUIREMENT_CHANGE,
             ReviewType.NEW_REQUIREMENT,
+            ReviewType.RETRACTION_CORRECTION,
         }:
             return REQUIREMENT_REVIEW_ALLOWED_ACTIONS
         return ()

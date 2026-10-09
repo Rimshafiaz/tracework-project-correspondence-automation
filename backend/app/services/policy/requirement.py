@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.ai.requirement_schemas import ExistingEvidenceReference, RequirementEvidenceReference, RequirementImpactDisposition, RequirementReconciliationConcernType, RequirementSourceEvidence
+from app.ai.requirement_schemas import ExistingEvidenceReference, RequirementCorrectionKind, RequirementEvidenceReference, RequirementImpactDisposition, RequirementReconciliationConcernType, RequirementSourceEvidence
 from app.contracts.requirement_policy import NewRequirementPolicyResult, RequirementPolicyContext, RequirementPolicyEvidenceFact, RequirementPolicyResult, RequirementPolicyRule, RequirementTransitionEffect
 from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, RequirementState
 from app.services.policy.requirement_rules import REQUIREMENT_POLICY_VERSION, reason_for_requirement_policy_rule
@@ -58,6 +58,11 @@ def evaluate_requirement_policy(
         )
 
     stale_rules = _stale_rules(context)
+    if context.reconciliation.corrections and stale_rules:
+        return reject_requirement_policy_context_failure(
+            proposal_id=context.proposal_id,
+            rule=stale_rules[0],
+        )
     semantic_rules = _semantic_review_rules(context)
     snapshot_requirements = {
         item.requirement_id: item for item in context.m11_snapshot.requirements
@@ -135,14 +140,20 @@ def evaluate_requirement_policy(
     overall_rules = list(stale_rules)
     overall_rules.extend(semantic_rules)
     overall_rules.extend(
+        RequirementPolicyRule.CORRECTION_REQUIRES_REVIEW
+        if correction.kind is RequirementCorrectionKind.CORRECTION
+        else RequirementPolicyRule.RETRACTION_REQUIRES_REVIEW
+        for correction in context.reconciliation.corrections
+    )
+    overall_rules.extend(
         rule for effect in effects for rule in effect.triggered_rule_ids
     )
     overall_rules.extend(
         rule for result in new_results for rule in result.triggered_rule_ids
     )
-    actionable_count = len(effects) + len(new_results)
+    actionable_count = len(effects) + len(new_results) + len(context.reconciliation.corrections)
     any_review = (
-        bool(stale_rules or semantic_rules or new_results)
+        bool(stale_rules or semantic_rules or new_results or context.reconciliation.corrections)
         or any(effect.decision is PolicyDecision.REVIEW_REQUIRED for effect in effects)
     )
     if any_review and actionable_count > 1:
@@ -191,6 +202,9 @@ def _basic_integrity_failure(
         for impact in context.reconciliation.existing_impacts
     }
     referenced_ids.update(
+        correction.requirement_id for correction in context.reconciliation.corrections
+    )
+    referenced_ids.update(
         requirement_id
         for concern in context.reconciliation.concerns
         for requirement_id in concern.candidate_requirement_ids
@@ -202,7 +216,30 @@ def _basic_integrity_failure(
     )
     if not referenced_ids.issubset(snapshot_ids):
         return RequirementPolicyRule.PROPOSAL_INTEGRITY_FAILED
+    snapshot_by_id = {item.requirement_id: item for item in snapshot.requirements}
+    for correction in context.reconciliation.corrections:
+        observed = snapshot_by_id[correction.requirement_id]
+        if (
+            correction.previous_state is not observed.current_state
+            or correction.previous_expected_date != observed.expected_date
+        ):
+            return RequirementPolicyRule.PROPOSAL_INTEGRITY_FAILED
+        if correction.kind is RequirementCorrectionKind.CORRECTION and (
+            correction.proposed_state in (None, observed.current_state)
+            and correction.proposed_expected_date in (None, observed.expected_date)
+        ):
+            return RequirementPolicyRule.PROPOSAL_INTEGRITY_FAILED
     if not snapshot_ids.issubset(current_by_id):
+        return RequirementPolicyRule.REQUIREMENT_NOT_CURRENT
+    if any(
+        current_by_id[impact.requirement_id].state is RequirementState.RETRACTED
+        for impact in context.reconciliation.existing_impacts
+    ):
+        return RequirementPolicyRule.REQUIREMENT_NOT_CURRENT
+    if any(
+        current_by_id[correction.requirement_id].state is RequirementState.RETRACTED
+        for correction in context.reconciliation.corrections
+    ):
         return RequirementPolicyRule.REQUIREMENT_NOT_CURRENT
     if any(
         current_by_id[requirement_id].project_id != snapshot.project_id
@@ -252,6 +289,40 @@ def _resolve_evidence(context: RequirementPolicyContext) -> _EvidenceResolution:
             ids.append(fact.evidence_item_id)
             referenced_ids.append(fact.evidence_item_id)
         new_evidence[index] = tuple(dict.fromkeys(ids))
+
+    snapshot_evidence = {
+        item.evidence_item_id: item for item in context.current_snapshot_evidence
+    }
+    for correction in context.reconciliation.corrections:
+        for reference in correction.evidence:
+            fact = _resolve_reference(
+                reference, tuple(facts.values()),
+                expected_requirement_id=correction.requirement_id,
+            )
+            _validate_evidence_fact(
+                fact,
+                project_id=context.m11_snapshot.project_id,
+                expected_requirement_id=correction.requirement_id,
+                source_reference=reference,
+            )
+            if fact.requirement_id != correction.requirement_id:
+                raise _IntegrityFailure(RequirementPolicyRule.EVIDENCE_SCOPE_MISMATCH)
+            referenced_ids.append(fact.evidence_item_id)
+        for evidence_id in correction.target_evidence_item_ids:
+            prior = snapshot_evidence.get(evidence_id)
+            fact = facts.get(evidence_id)
+            if prior is None or fact is None:
+                raise _IntegrityFailure(RequirementPolicyRule.EVIDENCE_MISSING_OR_UNLINKED)
+            if prior.validity is not EvidenceValidity.VALID or fact.validity is not EvidenceValidity.VALID:
+                raise _IntegrityFailure(RequirementPolicyRule.EVIDENCE_INVALIDATED)
+            if (
+                prior.project_id != context.m11_snapshot.project_id
+                or fact.project_id != context.m11_snapshot.project_id
+                or prior.requirement_id != correction.requirement_id
+                or fact.requirement_id != correction.requirement_id
+            ):
+                raise _IntegrityFailure(RequirementPolicyRule.EVIDENCE_SCOPE_MISMATCH)
+            referenced_ids.append(evidence_id)
 
     for item in (*context.reconciliation.concerns, *context.reconciliation.conflicts):
         for reference in item.evidence:

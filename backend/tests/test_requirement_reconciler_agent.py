@@ -25,7 +25,7 @@ def test_requirement_reconciler_uses_configured_google_model_and_no_tools() -> N
     assert agent.model.model_name == "gemini-test-model"
     assert agent.output_type is RequirementReconciliation
     assert agent._function_toolset.tools == {}
-    assert REQUIREMENT_RECONCILER_PROMPT_VERSION == "requirement-reconciler-v1"
+    assert REQUIREMENT_RECONCILER_PROMPT_VERSION == "requirement-reconciler-v2"
 
 
 def test_requirement_reconciler_requires_api_key_only_when_built() -> None:

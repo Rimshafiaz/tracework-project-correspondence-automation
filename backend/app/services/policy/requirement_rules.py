@@ -30,6 +30,8 @@ _REASONS = {
     RequirementPolicyRule.POSSIBLE_DUPLICATE: "The new requirement may overlap an existing requirement and requires human review.",
     RequirementPolicyRule.INSUFFICIENT_SCOPED_EVIDENCE: "The proposed change lacks valid evidence scoped to the affected requirement.",
     RequirementPolicyRule.MULTI_IMPACT_ATOMIC_REVIEW: "At least one impact requires review, so the entire multi-impact proposal remains unapplied.",
+    RequirementPolicyRule.CORRECTION_REQUIRES_REVIEW: "A correction to earlier requirement evidence requires human review.",
+    RequirementPolicyRule.RETRACTION_REQUIRES_REVIEW: "Withdrawal of earlier requirement evidence requires human review; no authoritative state is changed automatically.",
 }
 
 

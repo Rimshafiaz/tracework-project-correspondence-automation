@@ -1,5 +1,5 @@
 export type ProjectStatus = "ACTIVE" | "CLOSED";
-export type RequirementState = "OPEN" | "PARTIAL" | "SATISFIED" | "REVIEW";
+export type RequirementState = "OPEN" | "PARTIAL" | "SATISFIED" | "REVIEW" | "RETRACTED";
 export type EvidenceValidity = "VALID" | "INVALIDATED";
 export type LineageAttribution = "AUTOMATIC" | "HUMAN" | "NONE";
 
@@ -116,6 +116,7 @@ export type ReviewType =
   | "PROJECT_RESOLUTION"
   | "REQUIREMENT_CHANGE"
   | "NEW_REQUIREMENT"
+  | "RETRACTION_CORRECTION"
   | "DOCUMENT_REVISION";
 export type ReviewStatus = "PENDING" | "APPROVED" | "CORRECTED" | "REJECTED";
 export type ReviewAllowedAction = "APPROVE" | "ASSIGN_OR_CORRECT" | "REJECT";
@@ -210,7 +211,7 @@ export interface ProjectResolutionReviewDetail {
 }
 
 export interface RequirementReviewDetail {
-  review_type: "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT";
+  review_type: "REQUIREMENT_CHANGE" | "NEW_REQUIREMENT" | "RETRACTION_CORRECTION";
   allowed_actions: ReviewAllowedAction[];
   review: ReviewQueueSummary;
   correspondence: ReviewCorrespondence;
@@ -218,6 +219,17 @@ export interface RequirementReviewDetail {
     project_id: string;
     state_transition_id: string;
     reconciliation: {
+      corrections?: Array<{
+        kind: "CORRECTION" | "RETRACTION";
+        requirement_id: string;
+        previous_state: RequirementState;
+        previous_expected_date: string | null;
+        proposed_state: RequirementState | null;
+        proposed_expected_date: string | null;
+        target_evidence_item_ids: string[];
+        evidence: Array<{ excerpt: string; source_field: string }>;
+        interpretation: string;
+      }>;
       existing_impacts: Array<{
         requirement_id: string;
         disposition: "NO_CHANGE" | "UPDATE_PROPOSED";
@@ -344,7 +356,8 @@ export type ProjectActivityType =
   | "DOCUMENT_REVISION_SELECTED_CURRENT"
   | "DOCUMENT_REVISION_RETAINED_HISTORICAL"
   | "DOCUMENT_REVISION_DUPLICATE_RECORDED"
-  | "DOCUMENT_REVISION_REVIEW_CREATED";
+  | "DOCUMENT_REVISION_REVIEW_CREATED"
+  | "FOLLOW_UP_CANCELLED";
 
 export interface ProjectActivityEvent {
   event_id: string;

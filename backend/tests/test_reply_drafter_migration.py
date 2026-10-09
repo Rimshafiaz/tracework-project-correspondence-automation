@@ -28,7 +28,7 @@ def test_reply_drafter_migration_chains_from_0009_and_leaves_one_head():
 
     assert migration.revision == "0010"
     assert migration.down_revision == "0009"
-    assert ScriptDirectory.from_config(config).get_heads() == ["0010"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0011"]
 
 
 def test_reply_drafter_migration_updates_only_the_proposal_type_constraint():

@@ -1,13 +1,15 @@
 import hashlib
 from datetime import date
+from types import SimpleNamespace
 from uuid import uuid4
 
-from app.ai.requirement_schemas import ExistingRequirementImpact, NewRequirementProposal, RequirementEvidenceConflict, RequirementImpactDisposition, RequirementReconciliation, RequirementReconciliationConcern, RequirementReconciliationConcernType, RequirementSourceEvidence
+from app.ai.requirement_schemas import ExistingRequirementImpact, NewRequirementProposal, RequirementCorrectionKind, RequirementCorrectionProposal, RequirementEvidenceConflict, RequirementImpactDisposition, RequirementReconciliation, RequirementReconciliationConcern, RequirementReconciliationConcernType, RequirementSourceEvidence
 from app.ai.schemas import ResolverSourceField
-from app.contracts.requirement_policy import AuthoritativeProjectLinkRecord, RequirementCurrentRecord, RequirementPolicyContext, RequirementPolicyEvidenceFact, RequirementPolicyRule
-from app.contracts.requirement_reconciliation import RequirementContextSnapshot, RequirementSnapshot
+from app.contracts.requirement_policy import AuthoritativeProjectLinkRecord, RequirementCurrentEvidenceSnapshot, RequirementCurrentRecord, RequirementPolicyContext, RequirementPolicyEvidenceFact, RequirementPolicyRule
+from app.contracts.requirement_reconciliation import RequirementContextSnapshot, RequirementEvidenceSnapshot, RequirementSnapshot
 from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, RequirementState
 from app.services.policy.requirement import evaluate_requirement_policy
+from app.services.policy.requirement_persistence import build_requirement_policy_preview
 
 
 def _sha256(value: str) -> str:
@@ -39,6 +41,8 @@ def _context(
         source_field=ResolverSourceField.BODY,
         excerpt=excerpt,
     )
+
+
     impact = ExistingRequirementImpact(
         requirement_id=requirement_id,
         disposition=disposition,
@@ -104,6 +108,123 @@ def _context(
             ),
         ) if disposition is RequirementImpactDisposition.UPDATE_PROPOSED else (),
     )
+
+
+def _correction_context(kind: RequirementCorrectionKind = RequirementCorrectionKind.CORRECTION) -> RequirementPolicyContext:
+    context = _context()
+    requirement_id = context.m11_snapshot.requirements[0].requirement_id
+    project_id = context.m11_snapshot.project_id
+    prior_id = uuid4()
+    prior_excerpt = "Earlier deadline was October 10"
+    correction = RequirementCorrectionProposal(
+        kind=kind,
+        requirement_id=requirement_id,
+        previous_state=RequirementState.OPEN,
+        target_evidence_item_ids=(prior_id,),
+        proposed_expected_date=date(2026, 10, 20) if kind is RequirementCorrectionKind.CORRECTION else None,
+        evidence=(RequirementSourceEvidence(
+            correspondence_event_id=context.correspondence_event_id,
+            source_field=ResolverSourceField.BODY,
+            excerpt="measurable progress",
+        ),),
+        interpretation="Later correspondence corrects earlier evidence.",
+    )
+    prior_snapshot = RequirementEvidenceSnapshot(
+        evidence_item_id=prior_id,
+        project_id=project_id,
+        requirement_id=requirement_id,
+        validity=EvidenceValidity.VALID,
+        excerpt_sha256=_sha256(prior_excerpt),
+    )
+    prior_fact = RequirementPolicyEvidenceFact(
+        evidence_item_id=prior_id,
+        correspondence_event_id=uuid4(),
+        project_id=project_id,
+        requirement_id=requirement_id,
+        source_type="body",
+        excerpt=prior_excerpt,
+        validity=EvidenceValidity.VALID,
+    )
+    return context.model_copy(update={
+        "reconciliation": RequirementReconciliation(corrections=(correction,)),
+        "m11_snapshot": context.m11_snapshot.model_copy(update={"existing_evidence": (prior_snapshot,)}),
+        "current_snapshot_evidence": (RequirementCurrentEvidenceSnapshot(**prior_snapshot.model_dump()),),
+        "proposal_evidence": (*context.proposal_evidence, prior_fact),
+    })
+
+
+def test_correction_and_retraction_require_review_without_auto_effect() -> None:
+    for kind, rule in (
+        (RequirementCorrectionKind.CORRECTION, RequirementPolicyRule.CORRECTION_REQUIRES_REVIEW),
+        (RequirementCorrectionKind.RETRACTION, RequirementPolicyRule.RETRACTION_REQUIRES_REVIEW),
+    ):
+        context = _correction_context(kind)
+        result = evaluate_requirement_policy(context)
+        assert result.decision is PolicyDecision.REVIEW_REQUIRED
+        assert rule in result.triggered_rule_ids
+        assert result.requirement_effects == ()
+        assert set(result.evidence_ids) == {item.evidence_item_id for item in context.proposal_evidence}
+
+
+def test_correction_transition_preview_preserves_reviewed_target_and_values() -> None:
+    context = _correction_context()
+    result = evaluate_requirement_policy(context)
+    evaluation = SimpleNamespace(
+        id=uuid4(),
+        policy_version=result.policy_version,
+        decision=result.decision,
+        triggered_rule_ids=[rule.value for rule in result.triggered_rule_ids],
+        reasons=list(result.reasons),
+    )
+
+    preview = build_requirement_policy_preview(context=context, result=result, evaluation=evaluation)
+
+    assert preview.disposition.value == "REVIEW"
+    assert preview.proposed_state.values["correction_candidates"] == [
+        context.reconciliation.corrections[0].model_dump(mode="json")
+    ]
+
+
+def test_ambiguous_correction_remains_review_required() -> None:
+    context = _correction_context()
+    context = context.model_copy(update={
+        "reconciliation": context.reconciliation.model_copy(update={
+            "concerns": (RequirementReconciliationConcern(
+                concern_type=RequirementReconciliationConcernType.AMBIGUOUS_REQUIREMENT_MAPPING,
+                candidate_requirement_ids=(context.m11_snapshot.requirements[0].requirement_id,),
+                description="Prior statement may refer to another obligation.",
+            ),),
+        }),
+    })
+    result = evaluate_requirement_policy(context)
+    assert result.decision is PolicyDecision.REVIEW_REQUIRED
+    assert RequirementPolicyRule.M11_CONCERN in result.triggered_rule_ids
+
+
+def test_stale_or_wrong_target_correction_is_rejected() -> None:
+    context = _correction_context()
+    changed = context.current_requirements[0].model_copy(update={"state": RequirementState.PARTIAL})
+    stale = evaluate_requirement_policy(context.model_copy(update={"current_requirements": (changed,)}))
+    assert stale.decision is PolicyDecision.REJECT_PROPOSAL
+    assert RequirementPolicyRule.REQUIREMENT_STATE_STALE in stale.triggered_rule_ids
+
+    prior = context.proposal_evidence[-1]
+    wrong_target = evaluate_requirement_policy(context.model_copy(update={
+        "proposal_evidence": (*context.proposal_evidence[:-1], prior.model_copy(update={"requirement_id": uuid4()})),
+    }))
+    assert wrong_target.decision is PolicyDecision.REJECT_PROPOSAL
+    assert RequirementPolicyRule.EVIDENCE_SCOPE_MISMATCH in wrong_target.triggered_rule_ids
+
+    invalid_target = evaluate_requirement_policy(context.model_copy(update={
+        "proposal_evidence": (*context.proposal_evidence[:-1], prior.model_copy(update={"validity": EvidenceValidity.INVALIDATED})),
+    }))
+    assert invalid_target.decision is PolicyDecision.REJECT_PROPOSAL
+    assert RequirementPolicyRule.EVIDENCE_INVALIDATED in invalid_target.triggered_rule_ids
+
+    other_project = context.current_requirements[0].model_copy(update={"project_id": uuid4()})
+    cross_project = evaluate_requirement_policy(context.model_copy(update={"current_requirements": (other_project,)}))
+    assert cross_project.decision is PolicyDecision.REJECT_PROPOSAL
+    assert RequirementPolicyRule.REQUIREMENT_NOT_CURRENT in cross_project.triggered_rule_ids
 
 
 def test_open_to_partial_is_low_risk_trust_not_semantic_proof() -> None:

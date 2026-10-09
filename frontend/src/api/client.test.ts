@@ -71,6 +71,15 @@ describe("apiRequest", () => {
     await expect(apiRequest("/empty")).resolves.toBeUndefined();
   });
 
+  it("preserves only the safe remaining-support conflict code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: "REMAINING_SUPPORTING_EVIDENCE", message: "private detail" },
+    }), { status: 409 })));
+    await expect(apiRequest("/reviews/review-1/approve")).rejects.toMatchObject({
+      code: "REMAINING_SUPPORTING_EVIDENCE", message: "Stored history could not be reconciled.",
+    });
+  });
+
   it("maps malformed successful JSON to a safe error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not-json", { status: 200 })));
     await expect(apiRequest("/invalid-json")).rejects.toMatchObject({

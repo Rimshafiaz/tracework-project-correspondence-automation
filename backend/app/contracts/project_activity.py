@@ -25,6 +25,7 @@ class ProjectActivityType(StrEnum):
     REPLY_DRAFT_APPROVED = "REPLY_DRAFT_APPROVED"
     REPLY_SENT = "REPLY_SENT"
     FOLLOW_UP_COMPLETED = "FOLLOW_UP_COMPLETED"
+    FOLLOW_UP_CANCELLED = "FOLLOW_UP_CANCELLED"
 
 
 class ProjectActivityEvent(BaseModel):

@@ -14,6 +14,11 @@ class RequirementImpactDisposition(StrEnum):
     UPDATE_PROPOSED = "UPDATE_PROPOSED"
 
 
+class RequirementCorrectionKind(StrEnum):
+    CORRECTION = "CORRECTION"
+    RETRACTION = "RETRACTION"
+
+
 class RequirementSuggestedAction(StrEnum):
     REQUEST_CLARIFICATION = "REQUEST_CLARIFICATION"
     REQUEST_MISSING_EVIDENCE = "REQUEST_MISSING_EVIDENCE"
@@ -86,6 +91,8 @@ class ExistingRequirementImpact(BaseModel):
 
     @model_validator(mode="after")
     def validate_disposition(self) -> "ExistingRequirementImpact":
+        if self.proposed_state is RequirementState.RETRACTED:
+            raise ValueError("only RETRACTION may withdraw a requirement")
         if self.disposition is RequirementImpactDisposition.NO_CHANGE:
             if self.proposed_state is not None or self.proposed_expected_date is not None:
                 raise ValueError("NO_CHANGE cannot contain a proposed state or date")
@@ -113,6 +120,41 @@ class NewRequirementProposal(BaseModel):
         if not value:
             raise ValueError("new requirement text must not be blank")
         return value
+
+
+class RequirementCorrectionProposal(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: RequirementCorrectionKind
+    requirement_id: UUID
+    previous_state: RequirementState
+    previous_expected_date: date | None = None
+    target_evidence_item_ids: tuple[UUID, ...] = Field(min_length=1)
+    proposed_state: RequirementState | None = None
+    proposed_expected_date: date | None = None
+    evidence: tuple[RequirementSourceEvidence, ...] = Field(min_length=1)
+    interpretation: str
+
+    @field_validator("interpretation")
+    @classmethod
+    def reject_blank_interpretation(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("correction interpretation must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_effect(self) -> "RequirementCorrectionProposal":
+        if len(set(self.target_evidence_item_ids)) != len(self.target_evidence_item_ids):
+            raise ValueError("target evidence items must be unique")
+        if self.proposed_state is RequirementState.RETRACTED:
+            raise ValueError("only RETRACTION may withdraw a requirement")
+        if self.kind is RequirementCorrectionKind.RETRACTION:
+            if self.proposed_state is not None or self.proposed_expected_date is not None:
+                raise ValueError("RETRACTION cannot propose a replacement state or date")
+        elif self.proposed_state is None and self.proposed_expected_date is None:
+            raise ValueError("CORRECTION requires a proposed state or expected date")
+        return self
 
 
 class RequirementReconciliationConcern(BaseModel):
@@ -153,6 +195,7 @@ class RequirementReconciliation(BaseModel):
 
     existing_impacts: tuple[ExistingRequirementImpact, ...] = ()
     new_requirements: tuple[NewRequirementProposal, ...] = ()
+    corrections: tuple[RequirementCorrectionProposal, ...] = ()
     concerns: tuple[RequirementReconciliationConcern, ...] = ()
     conflicts: tuple[RequirementEvidenceConflict, ...] = ()
 
@@ -164,4 +207,9 @@ class RequirementReconciliation(BaseModel):
         normalized_names = [item.name.casefold().strip() for item in self.new_requirements]
         if len(normalized_names) != len(set(normalized_names)):
             raise ValueError("new requirement proposals must be unique")
+        correction_ids = [item.requirement_id for item in self.corrections]
+        if len(correction_ids) != len(set(correction_ids)):
+            raise ValueError("correction targets must be unique")
+        if set(correction_ids).intersection(requirement_ids):
+            raise ValueError("a requirement cannot have both an impact and a correction")
         return self

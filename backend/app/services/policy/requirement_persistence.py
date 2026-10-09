@@ -158,6 +158,10 @@ def build_requirement_policy_preview(
         }
         for item in result.new_requirement_results
     ]
+    corrections = [
+        item.model_dump(mode="json")
+        for item in context.reconciliation.corrections
+    ]
     return RequirementPolicyTransitionPreview(
         current_state=TransitionState(
             entity_type=REQUIREMENT_RECONCILIATION_ENTITY_TYPE,
@@ -174,6 +178,7 @@ def build_requirement_policy_preview(
                 "project_id": str(context.m11_snapshot.project_id),
                 "requirements": proposed_requirements,
                 "new_requirement_candidates": new_requirements,
+                "correction_candidates": corrections,
             },
         ),
         evidence_ids=result.evidence_ids,

@@ -106,7 +106,7 @@ def _fixture(*, decision=PolicyDecision.ALLOW_AUTO_ACTION):
     context = SimpleNamespace(
         proposal_id=proposal_id,
         m11_snapshot=SimpleNamespace(project_id=project_id),
-        reconciliation=SimpleNamespace(new_requirements=()),
+        reconciliation=SimpleNamespace(new_requirements=(), corrections=()),
     )
     effect_decision = (
         PolicyDecision.ALLOW_AUTO_ACTION

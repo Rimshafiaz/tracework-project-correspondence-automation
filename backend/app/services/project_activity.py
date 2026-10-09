@@ -1,6 +1,7 @@
 from uuid import UUID, uuid5
 
 from pydantic import ValidationError
+from app.ai.requirement_schemas import RequirementCorrectionProposal, RequirementCorrectionKind
 
 from app.contracts.evidence_lineage import LineageAttribution
 from app.contracts.project_activity import ProjectActivity, ProjectActivityEvent, ProjectActivityType
@@ -28,6 +29,7 @@ from app.services.document_revision import (
     DOCUMENT_REVISION_SELECTED_CURRENT,
 )
 from app.services.follow_up_due import FOLLOW_UP_BECAME_DUE_AUDIT_EVENT
+from app.services.follow_up_lifecycle import FOLLOW_UP_CANCELLED_AUDIT_EVENT
 from app.services.reply_draft_review import REPLY_DRAFT_APPROVED_AUDIT_EVENT
 from app.services.reply_draft_send import (
     FOLLOW_UP_COMPLETED_AUDIT_EVENT,
@@ -126,6 +128,9 @@ class ProjectActivityService:
                 ),
             )
         if audit.event_type == REQUIREMENT_REVIEW_APPROVED_AUDIT_EVENT:
+            transition = self.lineage_repository.get_state_transition_by_id(audit.state_transition_id)
+            if transition is not None and isinstance(transition.proposed_state, dict) and transition.proposed_state.get("correction_candidates"):
+                return self._correction_changes(project_id, audit, transition)
             return (
                 self._event(
                     audit,
@@ -183,6 +188,9 @@ class ProjectActivityService:
                     requirement_id=audit.requirement_id,
                 ),
             )
+        if audit.event_type == FOLLOW_UP_CANCELLED_AUDIT_EVENT and audit.details.get("cancellation_reason") == "REQUIREMENT_RETRACTED":
+            return (self._event(audit, project_id, ProjectActivityType.FOLLOW_UP_CANCELLED,
+                "Active follow-up cancelled because the requirement was retracted.", requirement_id=audit.requirement_id),)
         if audit.event_type == REPLY_SENT_AUDIT_EVENT:
             return (
                 self._event(
@@ -233,6 +241,37 @@ class ProjectActivityService:
                 ),
             )
         return ()
+
+    def _correction_changes(self, project_id, audit, transition):
+        proposal = self.lineage_repository.get_proposal(audit.ai_proposal_id)
+        if proposal is None:
+            raise ProjectActivityError("correction activity proposal was not found")
+        try:
+            snapshot = reconstruct_requirement_context_snapshot(proposal.input_metadata)
+            corrections = tuple(RequirementCorrectionProposal.model_validate(item)
+                for item in transition.proposed_state["correction_candidates"])
+        except (RequirementContextSnapshotError, ValidationError) as exc:
+            raise ProjectActivityError("correction activity is invalid") from exc
+        if snapshot.project_id != project_id:
+            raise ProjectActivityError("correction activity belongs to another project")
+        names = {item.requirement_id: item.name for item in snapshot.requirements}
+        events = []
+        for correction in corrections:
+            name = names.get(correction.requirement_id)
+            if name is None:
+                raise ProjectActivityError("correction activity requirement was not found")
+            if correction.kind is RequirementCorrectionKind.RETRACTION:
+                summary = f'Requirement "{name}" retracted after later correspondence; it is no longer applicable.'
+            else:
+                changes = []
+                if correction.proposed_expected_date is not None:
+                    changes.append(f"expected date changed from {correction.previous_expected_date or 'not set'} to {correction.proposed_expected_date}")
+                if correction.proposed_state is not None:
+                    changes.append(f"state changed from {correction.previous_state.value.lower()} to {correction.proposed_state.value.lower()}")
+                summary = f'Requirement "{name}": {"; ".join(changes)} after later correspondence.'
+            events.append(self._event(audit, project_id, ProjectActivityType.REQUIREMENT_REVIEW_APPROVED, summary,
+                event_id=uuid5(audit.id, str(correction.requirement_id)), requirement_id=correction.requirement_id))
+        return tuple(events)
 
     def _requirement_changes(self, project_id: UUID, audit) -> tuple[ProjectActivityEvent, ...]:
         if audit.state_transition_id is None:

@@ -60,6 +60,47 @@ def _service(project_id, audits):
     ), lineage
 
 
+@pytest.mark.parametrize("kind", ["CORRECTION", "RETRACTION"])
+def test_approved_correction_activity_explains_historical_values(kind):
+    project_id, requirement_id = uuid4(), uuid4()
+    audit = _audit("requirement_review_approved", datetime.now(UTC), project_id=project_id,
+        transition_id=uuid4(), actor_type="authenticated_operator", actor_identifier="operator")
+    service, lineage = _service(project_id, [audit])
+    lineage.get_proposal.return_value = SimpleNamespace(input_metadata={
+        "requirement_context_snapshot_schema_version": 1,
+        "requirement_reconciliation_context": {
+            "project_id": str(project_id), "authoritative_project_link_id": str(uuid4()),
+            "correspondence_event_id": str(audit.correspondence_event_id), "subject_sha256": None,
+            "body_sha256": "a" * 64, "attachments": [], "existing_evidence": [],
+            "requirements": [{"requirement_id": str(requirement_id), "name": "Delivery",
+                "description": None, "current_state": "OPEN", "expected_date": "2026-10-10"}],
+        },
+    })
+    lineage.get_state_transition_by_id.return_value = SimpleNamespace(proposed_state={"correction_candidates": [{
+        "kind": kind, "requirement_id": str(requirement_id), "previous_state": "OPEN",
+        "previous_expected_date": "2026-10-10", "target_evidence_item_ids": [str(uuid4())],
+        "proposed_expected_date": "2026-10-20" if kind == "CORRECTION" else None,
+        "evidence": [{"correspondence_event_id": str(audit.correspondence_event_id), "source_field": "BODY", "excerpt": "Explicit later correction."}],
+        "interpretation": "Later correction.",
+    }]})
+    event = service.load(project_id).events[0]
+    assert event.requirement_id == requirement_id
+    assert event.authenticated_operator_subject == "operator"
+    assert "later correspondence" in event.summary
+    assert ("2026-10-10 to 2026-10-20" if kind == "CORRECTION" else "no longer applicable") in event.summary
+
+
+def test_retraction_follow_up_cancellation_is_derived_once():
+    project_id = uuid4()
+    audit = _audit("follow_up_cancelled", datetime.now(UTC), project_id=project_id,
+        details={"cancellation_reason": "REQUIREMENT_RETRACTED"})
+    service, _ = _service(project_id, [audit])
+    events = service.load(project_id).events
+    assert len(events) == 1
+    assert events[0].event_type is ProjectActivityType.FOLLOW_UP_CANCELLED
+    assert "requirement was retracted" in events[0].summary
+
+
 def test_project_activity_is_chronological_and_excludes_technical_audits() -> None:
     project_id = uuid4()
     now = datetime.now(UTC)

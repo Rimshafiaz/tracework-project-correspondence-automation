@@ -19,6 +19,7 @@ from app.contracts.review_queue import (
     NewRequirementReviewReadDetail,
     ProjectResolutionReviewReadDetail,
     RequirementChangeReviewReadDetail,
+    RetractionCorrectionReviewReadDetail,
     DocumentRevisionReviewReadDetail,
 )
 from app.contracts.document_revision import DocumentRevisionEffect, DocumentRevisionRule, RevisionOutcome
@@ -126,7 +127,8 @@ def test_list_pending_preserves_repository_order_and_exact_capabilities() -> Non
     second = _review(ReviewType.REQUIREMENT_CHANGE)
     third = _review(ReviewType.NEW_REQUIREMENT)
     fourth = _review(ReviewType.DOCUMENT_REVISION)
-    reviews.list_pending.return_value = [first, second, third, fourth]
+    fifth = _review(ReviewType.RETRACTION_CORRECTION)
+    reviews.list_pending.return_value = [first, second, third, fourth, fifth]
 
     result = service.list_pending()
 
@@ -135,16 +137,24 @@ def test_list_pending_preserves_repository_order_and_exact_capabilities() -> Non
         second.id,
         third.id,
         fourth.id,
+        fifth.id,
     ]
     assert result[0].allowed_actions == PROJECT_RESOLUTION_ALLOWED_ACTIONS
     assert result[1].allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
     assert result[2].allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
     assert result[3].allowed_actions == ()
+    assert result[4].allowed_actions == REQUIREMENT_REVIEW_ALLOWED_ACTIONS
 
 
 def test_resolved_project_review_exposes_no_actions() -> None:
     review = _review(ReviewType.PROJECT_RESOLUTION, status=ReviewStatus.APPROVED)
 
+    assert ReviewQueueQueryService._summary(review).allowed_actions == ()
+
+
+@pytest.mark.parametrize("status", [ReviewStatus.APPROVED, ReviewStatus.REJECTED])
+def test_resolved_correction_review_exposes_no_mutation_actions(status):
+    review = _review(ReviewType.RETRACTION_CORRECTION, status=status)
     assert ReviewQueueQueryService._summary(review).allowed_actions == ()
 
 
@@ -176,6 +186,7 @@ def test_project_resolution_detail_delegates_to_m10_query_service() -> None:
     [
         (ReviewType.REQUIREMENT_CHANGE, RequirementChangeReviewReadDetail),
         (ReviewType.NEW_REQUIREMENT, NewRequirementReviewReadDetail),
+        (ReviewType.RETRACTION_CORRECTION, RetractionCorrectionReviewReadDetail),
     ],
 )
 def test_requirement_detail_reuses_m12_handoff(review_type, expected_type) -> None:

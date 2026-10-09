@@ -113,6 +113,8 @@ class RequirementReviewCreationService:
 
     @staticmethod
     def _review_type(handoff: RequirementReviewHandoff) -> ReviewType:
+        if handoff.reconciliation.corrections:
+            return ReviewType.RETRACTION_CORRECTION
         has_existing_change = any(
             impact.disposition is RequirementImpactDisposition.UPDATE_PROPOSED
             for impact in handoff.reconciliation.existing_impacts

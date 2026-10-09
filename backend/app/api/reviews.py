@@ -30,6 +30,7 @@ from app.services.follow_up_lifecycle import FollowUpLifecycleService
 from app.services.policy.requirement_context import RequirementPolicyContextService
 from app.services.requirement_review_decision import (
     RequirementReviewDecisionError,
+    RequirementReviewDecisionCode,
     RequirementReviewDecisionService,
 )
 from app.contracts.requirement_review_decision import (
@@ -162,5 +163,10 @@ def _requirement_decision_response(result) -> RequirementReviewDecisionResponse:
 
 
 def _requirement_decision_http_error(error: RequirementReviewDecisionError) -> HTTPException:
+    if error.code is RequirementReviewDecisionCode.REMAINING_SUPPORTING_EVIDENCE:
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+            "code": error.code.value,
+            "message": "This retraction cannot be applied because other valid evidence still supports the requirement.",
+        })
     code = status.HTTP_404_NOT_FOUND if "not found" in str(error) else status.HTTP_409_CONFLICT
     return HTTPException(status_code=code, detail=str(error))

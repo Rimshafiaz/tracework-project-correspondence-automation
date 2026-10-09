@@ -114,6 +114,7 @@ def test_qualifying_authoritative_requirement_is_scheduled(state):
     [
         (RequirementState.REVIEW, date(2026, 10, 10)),
         (RequirementState.SATISFIED, date(2026, 10, 10)),
+        (RequirementState.RETRACTED, date(2026, 10, 10)),
         (RequirementState.OPEN, None),
         (RequirementState.PARTIAL, None),
     ],
@@ -195,6 +196,7 @@ def test_expected_date_change_cancels_old_and_creates_linked_replacement():
     [
         (RequirementState.OPEN, None, FollowUpCancelReason.EXPECTED_DATE_REMOVED),
         (RequirementState.SATISFIED, date(2026, 10, 10), FollowUpCancelReason.REQUIREMENT_SATISFIED),
+        (RequirementState.RETRACTED, date(2026, 10, 10), FollowUpCancelReason.REQUIREMENT_RETRACTED),
     ],
 )
 @pytest.mark.parametrize("active_status", [FollowUpStatus.SCHEDULED, FollowUpStatus.DUE])

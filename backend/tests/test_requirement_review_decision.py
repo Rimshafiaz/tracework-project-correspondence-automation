@@ -1,16 +1,19 @@
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
+from app.ai.requirement_schemas import RequirementCorrectionKind, RequirementCorrectionProposal, RequirementReconciliation, RequirementSourceEvidence
+from app.ai.schemas import ResolverSourceField
 from app.contracts.requirement_review_decision import RequirementReviewAction
-from app.models.enums import PolicyDecision, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
+from app.models.enums import PolicyDecision, RequirementState, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
 from app.services.requirement_review_decision import (
     REQUIREMENT_REVIEW_APPROVED_AUDIT_EVENT,
     REQUIREMENT_REVIEW_REJECTED_AUDIT_EVENT,
     RequirementReviewDecisionError,
+    RequirementReviewDecisionCode,
     RequirementReviewDecisionService,
 )
 
@@ -89,6 +92,7 @@ def _service():
     context.build.return_value = SimpleNamespace(
         m11_snapshot=SimpleNamespace(project_id=project_id),
         reconciliation=SimpleNamespace(
+            corrections=(),
             new_requirements=(
                 SimpleNamespace(
                     name="Live smoke requirement",
@@ -117,6 +121,171 @@ def _service():
         new_requirement_results=(SimpleNamespace(decision=PolicyDecision.REVIEW_REQUIRED),),
     )
     return service, review, transition, lineage, requirements, follow_ups, session, policy_result
+
+
+def _correction_service(kind=RequirementCorrectionKind.CORRECTION, *, extra_support=False):
+    service, review, transition, lineage, requirements, follow_ups, session, policy_result = _service()
+    review.review_type = ReviewType.RETRACTION_CORRECTION
+    proposal = lineage.get_proposal_for_update.return_value
+    requirement_id = uuid4()
+    project_id = UUID(transition.current_state["project_id"])
+    prior = SimpleNamespace(id=uuid4(), project_id=project_id, requirement_id=requirement_id)
+    source = SimpleNamespace(id=uuid4(), project_id=project_id, requirement_id=requirement_id)
+    source_ref = RequirementSourceEvidence(
+        correspondence_event_id=proposal.correspondence_event_id,
+        source_field=ResolverSourceField.BODY,
+        excerpt="The earlier date is corrected.",
+    )
+    correction = RequirementCorrectionProposal(
+        kind=kind,
+        requirement_id=requirement_id,
+        previous_state=RequirementState.OPEN,
+        previous_expected_date=date(2026, 10, 10),
+        target_evidence_item_ids=(prior.id,),
+        proposed_expected_date=(date(2026, 10, 20) if kind is RequirementCorrectionKind.CORRECTION else None),
+        evidence=(source_ref,),
+        interpretation="Explicit later correspondence.",
+    )
+    reconciliation = RequirementReconciliation(corrections=(correction,))
+    proposal.structured_output = reconciliation.model_dump(mode="json")
+    transition.proposed_state = {"correction_candidates": [correction.model_dump(mode="json")]}
+    context = service.context.build.return_value
+    context.reconciliation = reconciliation
+    context.proposal_evidence = (SimpleNamespace(
+        evidence_item_id=source.id,
+        correspondence_event_id=proposal.correspondence_event_id,
+        attachment_id=None,
+        requirement_id=requirement_id,
+        source_type="body",
+        excerpt=source_ref.excerpt,
+    ),)
+    requirement = SimpleNamespace(
+        id=requirement_id, project_id=project_id,
+        state=RequirementState.OPEN, expected_date=date(2026, 10, 10),
+    )
+    requirements.get_for_update = lambda requested: requirement if requested == requirement_id else None
+    def apply(item, *, state, expected_date):
+        item.state = state
+        item.expected_date = expected_date
+        return item
+    requirements.apply_authorized_change = MagicMock(side_effect=apply)
+    valid = [prior, source]
+    if extra_support:
+        valid.append(SimpleNamespace(id=uuid4(), project_id=project_id, requirement_id=requirement_id))
+    lineage.list_valid_requirement_evidence_for_update.return_value = valid
+    lineage.list_policy_evidence.return_value = [prior, source]
+    policy_result.requirement_effects = ()
+    policy_result.new_requirement_results = ()
+    policy_result.evidence_ids = (prior.id, source.id)
+    return service, review, transition, lineage, requirements, follow_ups, session, policy_result, requirement, prior, source
+
+
+def test_approved_date_correction_applies_reviewed_value_once_and_preserves_prior_lineage(monkeypatch):
+    service, review, transition, lineage, requirements, follow_ups, session, policy_result, requirement, prior, source = _correction_service()
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+
+    result = service.approve(review.id, operator_subject="operator")
+    replay = service.approve(review.id, operator_subject="operator")
+
+    assert result.applied_requirement_ids == (requirement.id,)
+    assert replay.idempotent_replay is True
+    assert requirement.expected_date == date(2026, 10, 20)
+    assert transition.proposed_state["correction_candidates"][0]["previous_expected_date"] == "2026-10-10"
+    assert lineage.invalidate_evidence.call_args.args[0] is prior
+    assert source not in [call.args[0] for call in lineage.invalidate_evidence.call_args_list]
+    assert requirements.apply_authorized_change.call_count == 1
+    follow_ups.reconcile.assert_called_once()
+    assert session.commit.call_count == 2
+
+
+def test_retraction_requires_complete_prior_support_and_applies_once(monkeypatch):
+    service, review, _, lineage, requirements, follow_ups, _, policy_result, requirement, prior, _ = _correction_service(RequirementCorrectionKind.RETRACTION)
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+
+    result = service.approve(review.id, operator_subject="operator")
+    replay = service.approve(review.id, operator_subject="operator")
+
+    assert result.applied_requirement_ids == (requirement.id,)
+    assert replay.idempotent_replay is True
+    assert requirement.state is RequirementState.RETRACTED
+    assert lineage.invalidate_evidence.call_args.args[0] is prior
+    assert follow_ups.reconcile.call_count == 1
+    assert requirements.apply_authorized_change.call_count == 1
+
+
+def test_unaccounted_support_blocks_retraction_without_partial_writes(monkeypatch):
+    service, review, _, lineage, requirements, follow_ups, session, policy_result, requirement, _, _ = _correction_service(
+        RequirementCorrectionKind.RETRACTION, extra_support=True
+    )
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+
+    with pytest.raises(RequirementReviewDecisionError) as caught:
+        service.approve(review.id, operator_subject="operator")
+
+    assert caught.value.code is RequirementReviewDecisionCode.REMAINING_SUPPORTING_EVIDENCE
+    assert requirement.state is RequirementState.OPEN
+    lineage.invalidate_evidence.assert_not_called()
+    requirements.apply_authorized_change.assert_not_called()
+    follow_ups.reconcile.assert_not_called()
+    assert review.status is ReviewStatus.PENDING
+    session.rollback.assert_called_once_with()
+
+
+def test_stale_correction_blocks_before_evidence_mutation(monkeypatch):
+    service, review, _, lineage, requirements, _, session, policy_result, requirement, _, _ = _correction_service()
+    requirement.expected_date = date(2026, 10, 15)
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+
+    with pytest.raises(RequirementReviewDecisionError, match="changed after correction review"):
+        service.approve(review.id, operator_subject="operator")
+
+    lineage.invalidate_evidence.assert_not_called()
+    requirements.apply_authorized_change.assert_not_called()
+    session.rollback.assert_called_once_with()
+
+
+def test_cross_project_or_invalidated_target_blocks_correction(monkeypatch):
+    service, review, _, lineage, requirements, _, session, policy_result, requirement, prior, source = _correction_service()
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+    requirement.project_id = uuid4()
+    with pytest.raises(RequirementReviewDecisionError, match="changed after correction review"):
+        service.approve(review.id, operator_subject="operator")
+    lineage.invalidate_evidence.assert_not_called()
+
+    requirement.project_id = service.context.build.return_value.m11_snapshot.project_id
+    lineage.list_valid_requirement_evidence_for_update.return_value = [source]
+    with pytest.raises(RequirementReviewDecisionError, match="targeted evidence changed"):
+        service.approve(review.id, operator_subject="operator")
+    lineage.invalidate_evidence.assert_not_called()
+    requirements.apply_authorized_change.assert_not_called()
+    assert session.rollback.call_count == 2
+
+
+def test_follow_up_failure_rolls_back_correction_transaction(monkeypatch):
+    service, review, _, lineage, _, follow_ups, session, policy_result, _, _, _ = _correction_service()
+    monkeypatch.setattr("app.services.requirement_review_decision.evaluate_requirement_policy", lambda _context: policy_result)
+    follow_ups.reconcile.side_effect = RuntimeError("follow-up write failed")
+
+    with pytest.raises(RuntimeError, match="follow-up write failed"):
+        service.approve(review.id, operator_subject="operator")
+
+    lineage.invalidate_evidence.assert_called_once()
+    assert review.status is ReviewStatus.PENDING
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once_with()
+
+
+def test_wrong_review_type_cannot_use_requirement_application():
+    service, review, _, lineage, requirements, follow_ups, session, _ = _service()
+    review.review_type = ReviewType.DOCUMENT_REVISION
+
+    with pytest.raises(RequirementReviewDecisionError, match="not a requirement review"):
+        service.approve(review.id, operator_subject="operator")
+
+    assert requirements.created == []
+    lineage.mark_transition_applied.assert_not_called()
+    follow_ups.reconcile.assert_not_called()
+    session.rollback.assert_called_once_with()
 
 
 def test_approve_new_requirement_creates_authoritative_requirement_and_correspondence_origin_follow_up(monkeypatch):

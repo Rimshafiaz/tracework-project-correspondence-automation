@@ -34,7 +34,7 @@ def test_reply_draft_migration_chains_from_0008_and_leaves_one_head():
 
     assert migration.revision == "0009"
     assert migration.down_revision == "0008"
-    assert ScriptDirectory.from_config(config).get_heads() == ["0010"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0011"]
 
 
 @pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL is not configured")

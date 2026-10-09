@@ -13,6 +13,7 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly kind: ApiErrorKind,
+    public readonly code?: string,
   ) {
     super(safeMessage(kind));
     this.name = "ApiError";
@@ -73,7 +74,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     if (kind === "unauthorized") {
       await invalidateSession();
     }
-    throw new ApiError(response.status, kind);
+    const body = await response.json().catch(() => null);
+    const code = body?.detail?.code === "REMAINING_SUPPORTING_EVIDENCE"
+      ? body.detail.code as string : undefined;
+    throw new ApiError(response.status, kind, code);
   }
 
   if (response.status === 204) {

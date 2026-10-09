@@ -99,6 +99,7 @@ class _RequirementReviewReadDetail(BaseModel):
         if self.review.review_type not in {
             ReviewType.REQUIREMENT_CHANGE,
             ReviewType.NEW_REQUIREMENT,
+            ReviewType.RETRACTION_CORRECTION,
         }:
             raise ValueError("requirement review detail has an invalid review type")
         if (
@@ -130,6 +131,16 @@ class NewRequirementReviewReadDetail(_RequirementReviewReadDetail):
     def require_matching_type(self) -> "NewRequirementReviewReadDetail":
         if self.review.review_type is not ReviewType.NEW_REQUIREMENT:
             raise ValueError("new-requirement detail type is inconsistent")
+        return self
+
+
+class RetractionCorrectionReviewReadDetail(_RequirementReviewReadDetail):
+    review_type: Literal[ReviewType.RETRACTION_CORRECTION] = ReviewType.RETRACTION_CORRECTION
+
+    @model_validator(mode="after")
+    def require_matching_type(self) -> "RetractionCorrectionReviewReadDetail":
+        if self.review.review_type is not ReviewType.RETRACTION_CORRECTION:
+            raise ValueError("correction/retraction detail type is inconsistent")
         return self
 
 
@@ -205,6 +216,7 @@ ReviewReadDetail = Annotated[
     ProjectResolutionReviewReadDetail
     | RequirementChangeReviewReadDetail
     | NewRequirementReviewReadDetail
+    | RetractionCorrectionReviewReadDetail
     | DocumentRevisionReviewReadDetail,
     Field(discriminator="review_type"),
 ]
@@ -218,6 +230,6 @@ def _allowed_actions(
         return ()
     if review_type is ReviewType.PROJECT_RESOLUTION:
         return PROJECT_RESOLUTION_ALLOWED_ACTIONS
-    if review_type in {ReviewType.REQUIREMENT_CHANGE, ReviewType.NEW_REQUIREMENT}:
+    if review_type in {ReviewType.REQUIREMENT_CHANGE, ReviewType.NEW_REQUIREMENT, ReviewType.RETRACTION_CORRECTION}:
         return REQUIREMENT_REVIEW_ALLOWED_ACTIONS
     return ()

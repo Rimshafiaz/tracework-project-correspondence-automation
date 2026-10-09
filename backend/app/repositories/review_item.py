@@ -123,6 +123,7 @@ class ReviewItemRepository:
         if review_type not in {
             ReviewType.REQUIREMENT_CHANGE,
             ReviewType.NEW_REQUIREMENT,
+            ReviewType.RETRACTION_CORRECTION,
         }:
             raise ValueError("requirement review type is invalid")
         review_reason = review_reason.strip()

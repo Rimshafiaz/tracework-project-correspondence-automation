@@ -98,6 +98,10 @@ function ProjectResolutionReview({ detail }: { detail: ProjectResolutionReviewDe
 }
 
 function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
+  const corrections = detail.handoff.reconciliation.corrections ?? [];
+  const correctionReview = detail.review_type === "RETRACTION_CORRECTION";
+  const changeLabel = corrections.every((item) => item.kind === "RETRACTION") ? "Retraction"
+    : corrections.every((item) => item.kind === "CORRECTION") ? "Correction" : "Correction / retraction";
   const snapshots = new Map(detail.handoff.m11_snapshot.requirements.map((item) => [item.requirement_id, item]));
   const current = new Map(detail.handoff.current_requirements.map((item) => [item.requirement_id, item]));
   const action = useMutation({
@@ -117,13 +121,31 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
       <header className="requirement-review-heading">
         <div>
           <h1>Requirement review</h1>
-          <p>{detail.review.status === "PENDING" ? "Proposed change awaits a human decision. No authoritative update has been applied." : "This review has been resolved."}</p>
+          <p>{detail.review.status === "PENDING" ? "Proposed change awaits a human decision. No authoritative update has been applied." : `This review has been ${detail.review.status === "REJECTED" ? "rejected" : "approved"}.`}</p>
         </div>
-        <p>{reviewTypeLabel(detail.review_type)}<br />{formatDateTime(detail.review.created_at)}</p>
+        <p>{correctionReview ? changeLabel : reviewTypeLabel(detail.review_type)}<br />{formatDateTime(detail.review.created_at)}</p>
       </header>
       <div className="requirement-review-surface">
       <RequirementReviewSection title="Source"><RequirementCorrespondenceRecord correspondence={detail.correspondence} /></RequirementReviewSection>
       <RequirementReviewSection title="Requirement change">
+        {corrections.map((correction) => {
+          const observed = snapshots.get(correction.requirement_id);
+          const now = current.get(correction.requirement_id);
+          const pending = detail.review.status === "PENDING";
+          return <div className="requirement-impact-record" key={correction.requirement_id}>
+            <div className="requirement-impact-heading"><strong>{now?.name ?? observed?.name ?? "Requirement"}</strong><p>{correction.interpretation}</p></div>
+            <table className="comparison-table"><thead><tr><th>Field</th><th>{pending ? "Current value" : "Previous value"}</th><th>Proposed value</th></tr></thead><tbody>
+              <tr><th>State</th><td>{humanizeSignalType(pending ? now?.state ?? correction.previous_state : correction.previous_state)}</td><td>{correction.kind === "RETRACTION" ? "Retracted — no longer applicable" : humanizeSignalType(correction.proposed_state ?? correction.previous_state)}</td></tr>
+              <tr><th>Expected date</th><td>{formatDateOnly(pending ? now?.expected_date ?? null : correction.previous_expected_date)}</td><td>{formatDateOnly(correction.proposed_expected_date ?? correction.previous_expected_date)}</td></tr>
+            </tbody></table>
+            {!pending && now ? <p>Current value: {humanizeSignalType(now.state)} · Expected date: {formatDateOnly(now.expected_date)}</p> : null}
+            {correction.kind === "RETRACTION" ? <p>The requirement is being withdrawn, not marked completed. Approval checks that no other valid supporting evidence remains.</p> : null}
+            <h3>Previous evidence</h3>
+            <RequirementEvidenceTable evidence={detail.handoff.evidence.filter((item) => correction.target_evidence_item_ids.includes(item.evidence_item_id))} />
+            <h3>New evidence</h3>
+            {correction.evidence.map((item, index) => <blockquote key={index}>{item.excerpt}</blockquote>)}
+          </div>;
+        })}
         {detail.handoff.reconciliation.existing_impacts.map((impact) => {
           const observed = snapshots.get(impact.requirement_id);
           const now = current.get(impact.requirement_id);
@@ -133,14 +155,14 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
         })}
         {detail.handoff.reconciliation.new_requirements.map((requirement, index) => <div className="new-requirement-record" key={`${requirement.name}-${index}`}><span className="metadata-label">New requirement proposal</span><strong>{requirement.name}</strong>{requirement.description ? <p>{requirement.description}</p> : null}<p>{requirement.interpretation}</p><small>Expected date: {formatDateOnly(requirement.expected_date)}</small></div>)}
       </RequirementReviewSection>
-      <RequirementReviewSection title="Evidence"><RequirementEvidenceTable evidence={detail.handoff.evidence} /></RequirementReviewSection>
+      {!correctionReview ? <RequirementReviewSection title="Evidence"><RequirementEvidenceTable evidence={detail.handoff.evidence} /></RequirementReviewSection> : null}
       <RequirementReviewSection title="Review basis">
-        <dl className="review-basis-record"><div><dt>Decision</dt><dd>{detail.handoff.transition_preview.policy.decision}</dd></div><div><dt>Reason</dt><dd>{detail.handoff.transition_preview.policy.reasons.join(" ") || "No reason recorded"}</dd></div>{detail.handoff.reconciliation.concerns.map((item, index) => <div key={`concern-${index}`}><dt>Concern</dt><dd>{item.description}</dd></div>)}{detail.handoff.reconciliation.conflicts.map((item, index) => <div key={`conflict-${index}`}><dt>Conflict</dt><dd>{item.description}</dd></div>)}<div><dt>Technical definition</dt><dd><span className="technical-id">{detail.handoff.transition_preview.policy.policy_version}</span>{detail.handoff.transition_preview.policy.triggered_rule_ids.map((id) => <span className="technical-id" key={id}>{id}</span>)}</dd></div></dl>
+        <dl className="review-basis-record"><div><dt>Decision</dt><dd>{correctionReview ? "Human review required" : detail.handoff.transition_preview.policy.decision}</dd></div><div><dt>Reason</dt><dd>{detail.handoff.transition_preview.policy.reasons.join(" ") || "No reason recorded"}</dd></div>{detail.handoff.reconciliation.concerns.map((item, index) => <div key={`concern-${index}`}><dt>Concern</dt><dd>{item.description}</dd></div>)}{detail.handoff.reconciliation.conflicts.map((item, index) => <div key={`conflict-${index}`}><dt>Conflict</dt><dd>{item.description}</dd></div>)}{!correctionReview ? <div><dt>Technical definition</dt><dd><span className="technical-id">{detail.handoff.transition_preview.policy.policy_version}</span>{detail.handoff.transition_preview.policy.triggered_rule_ids.map((id) => <span className="technical-id" key={id}>{id}</span>)}</dd></div> : null}</dl>
       </RequirementReviewSection>
       {action.isError ? <p className="form-error" role="alert">{reviewActionError(action.error)}</p> : null}
       {detail.allowed_actions.length ? <div className="decision-actions">
         {detail.allowed_actions.includes("REJECT") ? <button className="danger-button" type="button" disabled={action.isPending} onClick={() => action.mutate("reject")}>Reject</button> : null}
-        {detail.allowed_actions.includes("APPROVE") ? <button className="primary-button" type="button" disabled={action.isPending} onClick={() => action.mutate("approve")}>Approve</button> : null}
+        {detail.allowed_actions.includes("APPROVE") ? <button className="primary-button" type="button" disabled={action.isPending} onClick={() => action.mutate("approve")}>{correctionReview ? `Approve ${changeLabel.toLowerCase()}` : "Approve"}</button> : null}
       </div> : null}
       </div>
     </article>
@@ -196,10 +218,13 @@ function RequirementReviewSection({ title, children }: { title: string; children
 function CorrespondenceRecord({ correspondence }: { correspondence: ProjectResolutionReviewDetail["detail"]["correspondence"] }) { return <div className="correspondence-record"><dl><div><dt>From</dt><dd>{correspondence.sender_name ?? correspondence.sender_email ?? correspondence.sender_identifier}</dd></div><div><dt>Received</dt><dd>{formatDateTime(correspondence.received_at)}</dd></div><div><dt>Subject</dt><dd>{correspondence.subject ?? "No subject"}</dd></div></dl><p>{correspondence.body}</p></div>; }
 function RequirementCorrespondenceRecord({ correspondence }: { correspondence: ReviewCorrespondence }) { return <div className="requirement-correspondence-record"><dl><div><dt>From</dt><dd>{correspondence.sender_name ?? correspondence.sender_email ?? correspondence.sender_identifier}</dd></div><div><dt>Subject</dt><dd>{correspondence.subject ?? "No subject"}</dd></div><div><dt>Received</dt><dd>{formatDateTime(correspondence.received_at)}</dd></div></dl><p>{correspondence.body}</p></div>; }
 function EvidenceReferenceTable({ evidence }: { evidence: ProjectResolutionReviewDetail["detail"]["evidence"] }) { return evidence.length ? <div className="evidence-key"><h3>Evidence key</h3><ol>{evidence.map((item, index) => <li key={item.evidence_item_id}><span className="evidence-reference">E{index + 1}</span><div><strong>{humanizeSignalType(item.source_type)}</strong><blockquote>{item.excerpt}</blockquote>{item.page_number || item.section ? <small>{item.page_number ? `Page ${item.page_number}` : ""}{item.page_number && item.section ? ", " : ""}{item.section ?? ""}</small> : null}</div></li>)}</ol></div> : null; }
-function RequirementEvidenceTable({ evidence }: { evidence: RequirementReviewDetail["handoff"]["evidence"] }) { return evidence.length ? <div className="requirement-evidence-table"><div className="requirement-evidence-header"><span>Source</span><span>Exact excerpt</span><span>Validity</span></div>{evidence.map((item) => <div className="requirement-evidence-row" key={item.evidence_item_id}><div>{humanizeSignalType(item.source_type)}{item.page_number || item.section ? <small>{item.page_number ? `Page ${item.page_number}` : ""}{item.page_number && item.section ? ", " : ""}{item.section ?? ""}</small> : null}</div><blockquote>{item.excerpt}</blockquote><strong>{item.validity}</strong></div>)}</div> : <p className="empty-state">No evidence excerpts are available.</p>; }
+function RequirementEvidenceTable({ evidence }: { evidence: RequirementReviewDetail["handoff"]["evidence"] }) { return evidence.length ? <div className="requirement-evidence-table"><div className="requirement-evidence-header"><span>Source</span><span>Exact excerpt</span><span>Validity</span></div>{evidence.map((item) => <div className="requirement-evidence-row" key={item.evidence_item_id}><div>{humanizeSignalType(item.source_type)}{item.page_number || item.section ? <small>{item.page_number ? `Page ${item.page_number}` : ""}{item.page_number && item.section ? ", " : ""}{item.section ?? ""}</small> : null}</div><blockquote>{item.excerpt}</blockquote><strong>{item.validity === "VALID" ? "Current" : "Historical"}</strong></div>)}</div> : <p className="empty-state">No evidence excerpts are available.</p>; }
 function CandidateRecord({ candidate, evidenceLabels, interpretation, selected }: { candidate: ReviewProjectCandidate; evidenceLabels: Map<string, string>; interpretation?: string; selected: boolean }) { return <div className="candidate-record"><div><span className="project-code">{candidate.project_code}</span><strong>{candidate.project_name}</strong></div><ul>{candidate.signals.map((signal, index) => <li key={`${signal.signal_type}-${index}`}>{signal.evidence_item_id && evidenceLabels.get(signal.evidence_item_id) ? <span className="evidence-reference">{evidenceLabels.get(signal.evidence_item_id)}</span> : null}<span>{humanizeSignalType(signal.signal_type)}: {signal.matched_value}</span></li>)}</ul><p><strong>{selected ? "Proposed." : "Alternative."}</strong> {interpretation ?? "No resolver interpretation recorded."}</p></div>; }
 function humanizeSignalType(value: string) { return value.replaceAll("_", " ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase()); }
 function RecordList({ label, values }: { label: string; values: string[] }) { return <div className="record-list"><span className="metadata-label">{label}</span><ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul></div>; }
 function projectLabel(candidate: ReviewProjectCandidate) { return `${candidate.project_code} ${candidate.project_name}`; }
 function projectNames(ids: string[], candidates: Map<string, ReviewProjectCandidate>) { return ids.length ? ids.map((id) => candidates.get(id) ? projectLabel(candidates.get(id) as ReviewProjectCandidate) : id).join(", ") : "None"; }
-function reviewActionError(error: Error) { return error instanceof ApiError && error.kind === "conflict" ? "This review has already been resolved or is no longer current." : "The review decision could not be saved."; }
+function reviewActionError(error: Error) {
+  if (error instanceof ApiError && error.code === "REMAINING_SUPPORTING_EVIDENCE") return "This retraction cannot be applied because other valid evidence still supports the requirement.";
+  return error instanceof ApiError && error.kind === "conflict" ? "This review has already been resolved or is no longer current." : "The review decision could not be saved.";
+}

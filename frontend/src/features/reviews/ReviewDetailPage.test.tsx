@@ -25,6 +25,8 @@ vi.mock("../../api/projects", () => ({ getProjects: api.getProjects }));
 
 import { renderWithProviders } from "../../test/render";
 import { ReviewDetailPage } from "./ReviewDetailPage";
+import { ApiError } from "../../api/client";
+import { queryClient } from "../../lib/queryClient";
 
 const correspondence = {
   correspondence_event_id: "correspondence-1",
@@ -44,10 +46,81 @@ function renderPage() {
   );
 }
 
+function correctionDetail(kind: "CORRECTION" | "RETRACTION", resolved = false) {
+  return {
+    review_type: "RETRACTION_CORRECTION", allowed_actions: resolved ? [] : ["APPROVE", "REJECT"],
+    review: { review_item_id: "review-1", status: resolved ? "APPROVED" : "PENDING", created_at: "2026-10-05T09:05:00Z" },
+    correspondence,
+    handoff: {
+      project_id: "project-1", reconciliation: {
+        existing_impacts: [], new_requirements: [], concerns: [], conflicts: [],
+        corrections: [{ kind, requirement_id: "requirement-1", previous_state: "OPEN", previous_expected_date: "2026-10-10",
+          proposed_state: null, proposed_expected_date: kind === "CORRECTION" ? "2026-10-20" : null,
+          target_evidence_item_ids: ["old-evidence"], evidence: [{ excerpt: "Later explicit correction.", source_field: "BODY" }], interpretation: "Later correspondence corrects the obligation." }],
+      },
+      m11_snapshot: { requirements: [{ requirement_id: "requirement-1", name: "Security review" }] },
+      current_requirements: [{ requirement_id: "requirement-1", name: "Security review", state: resolved && kind === "RETRACTION" ? "RETRACTED" : "OPEN", expected_date: "2026-10-10" }],
+      transition_preview: { policy: { decision: "REVIEW_REQUIRED", reasons: ["Explicit human decision required."] } },
+      evidence: [{ evidence_item_id: "old-evidence", source_type: "BODY", excerpt: "Original deadline was October 10.", validity: resolved ? "INVALIDATED" : "VALID" }],
+    },
+  };
+}
+
 describe("ReviewDetailPage", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.getProjects.mockResolvedValue([]);
+  });
+
+  it("shows correction values and evidence using the existing review actions", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    api.getReview.mockResolvedValue(correctionDetail("CORRECTION"));
+    renderPage();
+    expect(await screen.findByText(/^Correction/)).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Current value" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Proposed value" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Previous evidence" })).toBeInTheDocument();
+    expect(screen.getByText("Original deadline was October 10.")).toBeInTheDocument();
+    expect(screen.getByText("Later explicit correction.")).toBeInTheDocument();
+    expect(screen.getByText("Oct 10, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Oct 20, 2026")).toBeInTheDocument();
+    expect(screen.queryByText("REVIEW_REQUIRED")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Approve correction" }));
+    expect(api.approveRequirementReview).toHaveBeenCalledWith("review-1");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["reviews", "review-1"] });
+    invalidate.mockRestore();
+  });
+
+  it("explains remaining support without exposing internal errors", async () => {
+    api.getReview.mockResolvedValue(correctionDetail("RETRACTION"));
+    api.approveRequirementReview.mockRejectedValue(new ApiError(409, "conflict", "REMAINING_SUPPORTING_EVIDENCE"));
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Approve retraction" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("other valid evidence still supports the requirement");
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+
+  it("shows a resolved retraction as historical and removes decision controls", async () => {
+    api.getReview.mockResolvedValue(correctionDetail("RETRACTION", true));
+    renderPage();
+    expect(await screen.findByText("This review has been approved.")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Previous value" })).toBeInTheDocument();
+    expect(screen.getByText("Retracted — no longer applicable")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+  });
+
+  it("uses the existing reject action and displays its resolved outcome", async () => {
+    const detail = correctionDetail("CORRECTION");
+    api.getReview.mockResolvedValue(detail);
+    const view = renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Reject" }));
+    expect(api.rejectRequirementReview).toHaveBeenCalledWith("review-1");
+    view.unmount();
+    api.getReview.mockResolvedValue({ ...detail, allowed_actions: [], review: { ...detail.review, status: "REJECTED" } });
+    renderPage();
+    expect(await screen.findByText("This review has been rejected.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).not.toBeInTheDocument();
   });
 
   it("renders actionable requirement review controls and submits the human decision", async () => {

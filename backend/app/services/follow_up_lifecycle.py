@@ -248,6 +248,8 @@ class FollowUpLifecycleService:
 
     @staticmethod
     def _cancel_reason(state, expected_date):
+        if state is RequirementState.RETRACTED:
+            return FollowUpCancelReason.REQUIREMENT_RETRACTED
         if state is RequirementState.SATISFIED:
             return FollowUpCancelReason.REQUIREMENT_SATISFIED
         if expected_date is None:

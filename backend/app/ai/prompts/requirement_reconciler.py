@@ -1,4 +1,4 @@
-REQUIREMENT_RECONCILER_PROMPT_VERSION = "requirement-reconciler-v1"
+REQUIREMENT_RECONCILER_PROMPT_VERSION = "requirement-reconciler-v2"
 
 REQUIREMENT_RECONCILER_INSTRUCTIONS = """
 Interpret how the supplied correspondence and attachment text affect the
@@ -22,6 +22,17 @@ Interpret requirement states semantically:
 Propose a new requirement only when the correspondence introduces a materially
 new obligation that is not already represented by the supplied requirements.
 Do not create a duplicate merely because the wording is different.
+
+When correspondence explicitly corrects or retracts an earlier claim, propose
+a CORRECTION or RETRACTION for the supplied requirement it affects. Identify
+the specific prior valid evidence item IDs being corrected or withdrawn, copy
+the requirement's current state and expected date from the supplied context,
+and cite exact source excerpts from the new correspondence. For a correction,
+propose only a changed state or replacement expected date; for a retraction,
+do not invent a replacement state or date. Do not also return an ordinary
+existing-requirement impact for the same requirement. If the target requirement
+or earlier evidence is unclear or absent, report a concern instead of guessing.
+Old correspondence and evidence remain historical records.
 
 Ground every material update or new-requirement proposal in supplied evidence.
 For new source evidence, identify the persisted source field and quote an exact,

@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.ai_proposal import AIProposal
 from app.models.enums import EvidenceValidity, PolicyDecision, ProposalType, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
 from app.models.policy_evaluation import PolicyEvaluation
+from app.models.evidence_item import EvidenceItem
 from app.repositories.lineage import LineageRepository
 
 
@@ -30,6 +32,32 @@ def test_create_evidence_preserves_exact_source_details() -> None:
     assert evidence.attachment_id == attachment_id
     assert evidence.page_number == 3
     assert evidence.validity is EvidenceValidity.VALID
+    session.flush.assert_called_once_with()
+
+
+def test_invalidation_preserves_evidence_row_and_records_correcting_source() -> None:
+    session = MagicMock(spec=Session)
+    repository = LineageRepository(session)
+    original_event_id = uuid4()
+    correcting_event_id = uuid4()
+    evidence = EvidenceItem(
+        id=uuid4(), correspondence_event_id=original_event_id,
+        source_type="body", excerpt="Original deadline was October 10.",
+        validity=EvidenceValidity.VALID,
+    )
+    invalidated_at = datetime.now(UTC)
+
+    repository.invalidate_evidence(
+        evidence, correspondence_event_id=correcting_event_id,
+        reason="Approved correction", invalidated_at=invalidated_at,
+    )
+
+    assert evidence.correspondence_event_id == original_event_id
+    assert evidence.validity is EvidenceValidity.INVALIDATED
+    assert evidence.invalidated_by_correspondence_event_id == correcting_event_id
+    assert evidence.invalidation_reason == "Approved correction"
+    assert evidence.invalidated_at == invalidated_at
+    session.delete.assert_not_called()
     session.flush.assert_called_once_with()
 
 

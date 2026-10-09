@@ -89,6 +89,30 @@ class LineageRepository:
             statement = statement.limit(limit)
         return self.session.scalars(statement).all()
 
+    def list_valid_requirement_evidence_for_update(
+        self, *, project_id: UUID, requirement_id: UUID
+    ) -> Sequence[EvidenceItem]:
+        return self.session.scalars(
+            select(EvidenceItem)
+            .where(
+                EvidenceItem.project_id == project_id,
+                EvidenceItem.requirement_id == requirement_id,
+                EvidenceItem.validity == EvidenceValidity.VALID,
+            )
+            .order_by(EvidenceItem.created_at, EvidenceItem.id)
+            .with_for_update()
+        ).all()
+
+    def invalidate_evidence(
+        self, evidence: EvidenceItem, *, correspondence_event_id: UUID,
+        reason: str, invalidated_at: datetime,
+    ) -> None:
+        evidence.validity = EvidenceValidity.INVALIDATED
+        evidence.invalidated_by_correspondence_event_id = correspondence_event_id
+        evidence.invalidation_reason = reason
+        evidence.invalidated_at = invalidated_at
+        self.session.flush()
+
     def get_policy_evaluation(
         self,
         *,

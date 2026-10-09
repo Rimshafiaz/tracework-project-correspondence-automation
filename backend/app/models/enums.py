@@ -11,6 +11,7 @@ class RequirementState(StrEnum):
     PARTIAL = "PARTIAL"
     SATISFIED = "SATISFIED"
     REVIEW = "REVIEW"
+    RETRACTED = "RETRACTED"
 
 
 class CorrespondenceProcessingState(StrEnum):
@@ -58,6 +59,7 @@ class FollowUpCancelReason(StrEnum):
     REQUIREMENT_SATISFIED = "REQUIREMENT_SATISFIED"
     EXPECTED_DATE_CHANGED = "EXPECTED_DATE_CHANGED"
     EXPECTED_DATE_REMOVED = "EXPECTED_DATE_REMOVED"
+    REQUIREMENT_RETRACTED = "REQUIREMENT_RETRACTED"
 
 
 class ReplyType(StrEnum):

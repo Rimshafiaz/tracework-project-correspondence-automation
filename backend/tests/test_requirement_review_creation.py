@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.ai.requirement_schemas import NewRequirementProposal, RequirementReconciliation, RequirementSourceEvidence
+from app.ai.requirement_schemas import NewRequirementProposal, RequirementCorrectionKind, RequirementCorrectionProposal, RequirementReconciliation, RequirementSourceEvidence
 from app.ai.schemas import ResolverSourceField
-from app.models.enums import PolicyDecision, ReviewStatus, ReviewType
+from app.models.enums import PolicyDecision, RequirementState, ReviewStatus, ReviewType
 from app.services.policy.requirement_authorization import RequirementPolicyAuthorizationResult
 from app.services.requirement_policy_workflow import RequirementPolicyWorkflowService
 from app.services.requirement_review_creation import REQUIREMENT_REVIEW_CREATED_AUDIT_EVENT, RequirementReviewCreationError, RequirementReviewCreationService
@@ -106,6 +106,29 @@ def test_non_review_policy_cannot_enter_requirement_queue() -> None:
     assert reviews.reviews == {}
     session.commit.assert_not_called()
     session.rollback.assert_called_once_with()
+
+
+def test_correction_uses_existing_review_queue_with_distinct_type() -> None:
+    lineage = CreationLineageRepository()
+    reconciliation = RequirementReconciliation.model_validate(lineage.proposal.structured_output)
+    impact = reconciliation.existing_impacts[0]
+    lineage.proposal.structured_output = RequirementReconciliation(corrections=(
+        RequirementCorrectionProposal(
+            kind=RequirementCorrectionKind.RETRACTION,
+            requirement_id=impact.requirement_id,
+            previous_state=RequirementState.OPEN,
+            target_evidence_item_ids=(lineage.evidence.id,),
+            evidence=(impact.evidence[0],),
+            interpretation="The earlier statement was withdrawn.",
+        ),
+    )).model_dump(mode="json")
+    lineage.transition.requirement_effects = []
+    service, _, _ = _service(lineage)
+
+    result = service.ensure_review_for_policy_evaluation(lineage.evaluation.id)
+
+    assert result.review_item.review_type is ReviewType.RETRACTION_CORRECTION
+    assert result.review_item.status is ReviewStatus.PENDING
 
 
 def test_mixed_existing_and_new_proposals_use_requirement_change_review() -> None:

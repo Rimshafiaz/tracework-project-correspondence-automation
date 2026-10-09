@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.ai.requirement_schemas import RequirementCorrectionKind, RequirementReconciliation
 from app.contracts.requirement_review_decision import RequirementReviewAction
-from app.models.enums import PolicyDecision, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
+from app.models.enums import PolicyDecision, RequirementState, ReviewStatus, ReviewType, TransitionDisposition, TransitionStatus
 from app.repositories.lineage import LineageRepository
 from app.repositories.requirement import RequirementRepository
 from app.repositories.review_item import ReviewItemRepository, ReviewItemStateError
@@ -20,8 +22,14 @@ REQUIREMENT_REVIEW_APPROVED_AUDIT_EVENT = "requirement_review_approved"
 REQUIREMENT_REVIEW_REJECTED_AUDIT_EVENT = "requirement_review_rejected"
 
 
+class RequirementReviewDecisionCode(StrEnum):
+    REMAINING_SUPPORTING_EVIDENCE = "REMAINING_SUPPORTING_EVIDENCE"
+
+
 class RequirementReviewDecisionError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: RequirementReviewDecisionCode | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,7 @@ class RequirementReviewDecisionService:
             if review.review_type not in {
                 ReviewType.REQUIREMENT_CHANGE,
                 ReviewType.NEW_REQUIREMENT,
+                ReviewType.RETRACTION_CORRECTION,
             }:
                 raise RequirementReviewDecisionError("review item is not a requirement review")
             transition = self.lineage.get_state_transition_by_id_for_update(review.state_transition_id)
@@ -105,6 +114,10 @@ class RequirementReviewDecisionService:
             )
             proposal = self.lineage.get_proposal_for_update(transition.ai_proposal_id)
             self._validate_lineage(review, transition, evaluation, proposal)
+            if review.review_type is ReviewType.RETRACTION_CORRECTION:
+                reconciliation = RequirementReconciliation.model_validate(proposal.structured_output)
+                if not reconciliation.corrections:
+                    raise RequirementReviewDecisionError("requirement review type does not match its proposal")
 
             if review.status is not ReviewStatus.PENDING:
                 result = self._idempotent_result(review, action)
@@ -135,9 +148,16 @@ class RequirementReviewDecisionService:
                 )
 
             context = self.context.build(proposal, lock_current_requirements=True)
+            if bool(context.reconciliation.corrections) != (review.review_type is ReviewType.RETRACTION_CORRECTION):
+                raise RequirementReviewDecisionError("requirement review type does not match its proposal")
             result = evaluate_requirement_policy(context)
             self._require_current_review_result(result, evaluation, transition)
-            applied_requirements = self._apply_effects(context, result)
+            correction_requirements = self._apply_corrections(
+                context, proposal, transition, now
+            ) if review.review_type is ReviewType.RETRACTION_CORRECTION else ()
+            applied_requirements = (*correction_requirements, *self._apply_effects(
+                context, result, allow_empty=bool(correction_requirements)
+            ))
             self.lineage.mark_transition_applied(transition, applied_at=now)
             lifecycle_results = tuple(
                 self.follow_ups.reconcile(
@@ -215,7 +235,77 @@ class RequirementReviewDecisionService:
         if set(result.evidence_ids) != persisted_evidence_ids:
             raise RequirementReviewDecisionError("requirement evidence changed after review")
 
-    def _apply_effects(self, context, result):
+    def _apply_corrections(self, context, proposal, transition, now):
+        corrections = context.reconciliation.corrections
+        if transition.proposed_state.get("correction_candidates") != [
+            item.model_dump(mode="json") for item in corrections
+        ]:
+            raise RequirementReviewDecisionError("correction proposal changed after review")
+        prepared = []
+        project_id = context.m11_snapshot.project_id
+        for correction in corrections:
+            requirement = self.requirements.get_for_update(correction.requirement_id)
+            if (
+                requirement is None or requirement.project_id != project_id
+                or requirement.state is not correction.previous_state
+                or requirement.expected_date != correction.previous_expected_date
+                or requirement.state is RequirementState.RETRACTED
+            ):
+                raise RequirementReviewDecisionError("requirement changed after correction review")
+            valid_evidence = self.lineage.list_valid_requirement_evidence_for_update(
+                project_id=project_id, requirement_id=requirement.id
+            )
+            valid_by_id = {item.id: item for item in valid_evidence}
+            targeted = set(correction.target_evidence_item_ids)
+            if not targeted.issubset(valid_by_id):
+                raise RequirementReviewDecisionError("targeted evidence changed after review")
+            source_ids = {
+                item.evidence_item_id for item in context.proposal_evidence
+                if item.requirement_id == requirement.id
+                and any(
+                    item.correspondence_event_id == source.correspondence_event_id
+                    and item.attachment_id == source.attachment_id
+                    and item.source_type == source.source_field.value.lower()
+                    and item.excerpt == source.excerpt
+                    for source in correction.evidence
+                )
+            }
+            if not source_ids or not source_ids.issubset(valid_by_id):
+                raise RequirementReviewDecisionError("correcting source evidence changed after review")
+            if correction.kind is RequirementCorrectionKind.RETRACTION:
+                remaining = set(valid_by_id) - targeted - source_ids
+                if remaining:
+                    raise RequirementReviewDecisionError(
+                        "remaining supporting evidence requires reconciliation",
+                        code=RequirementReviewDecisionCode.REMAINING_SUPPORTING_EVIDENCE,
+                    )
+            prepared.append((correction, requirement, tuple(valid_by_id[item] for item in targeted)))
+
+        applied = []
+        for correction, requirement, targeted in prepared:
+            for evidence in targeted:
+                self.lineage.invalidate_evidence(
+                    evidence, correspondence_event_id=proposal.correspondence_event_id,
+                    reason=f"Approved {correction.kind.value.lower()} review {transition.id}",
+                    invalidated_at=now,
+                )
+            self.requirements.apply_authorized_change(
+                requirement,
+                state=(
+                    RequirementState.RETRACTED
+                    if correction.kind is RequirementCorrectionKind.RETRACTION
+                    else correction.proposed_state or requirement.state
+                ),
+                expected_date=(
+                    correction.proposed_expected_date
+                    if correction.proposed_expected_date is not None
+                    else requirement.expected_date
+                ),
+            )
+            applied.append(requirement)
+        return tuple(applied)
+
+    def _apply_effects(self, context, result, *, allow_empty: bool = False):
         applied = []
         for effect in result.requirement_effects:
             requirement = self.requirements.get_for_update(effect.requirement_id)
@@ -244,7 +334,7 @@ class RequirementReviewDecisionService:
                     expected_date=proposed.expected_date,
                 )
             )
-        if not applied:
+        if not applied and not allow_empty:
             raise RequirementReviewDecisionError("requirement review has no applicable effects")
         return tuple(applied)
 

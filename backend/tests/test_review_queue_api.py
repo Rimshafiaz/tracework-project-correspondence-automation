@@ -429,3 +429,20 @@ def test_requirement_review_decision_routes_delegate_only_human_action(review_ap
     assert decision_service.calls == [
         ("approve", summary.review_item_id, "operator-subject")
     ]
+
+
+def test_remaining_support_is_a_safe_typed_conflict(review_api):
+    from app.services.requirement_review_decision import RequirementReviewDecisionCode, RequirementReviewDecisionError
+    from unittest.mock import Mock
+
+    _, summaries = review_api
+    service = Mock()
+    service.approve.side_effect = RequirementReviewDecisionError(
+        "internal evidence IDs must not leak", code=RequirementReviewDecisionCode.REMAINING_SUPPORTING_EVIDENCE,
+    )
+    app.dependency_overrides[get_requirement_review_decision_service] = lambda: service
+    response = _post(f"/reviews/{summaries[1].review_item_id}/approve")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "REMAINING_SUPPORTING_EVIDENCE"
+    assert "other valid evidence" in response.json()["detail"]["message"]
+    assert "internal" not in response.text

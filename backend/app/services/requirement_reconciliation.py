@@ -6,11 +6,11 @@ from uuid import UUID
 from pydantic_ai import Agent
 
 from app.ai.prompts.requirement_reconciler import REQUIREMENT_RECONCILER_PROMPT_VERSION
-from app.ai.requirement_schemas import ExistingEvidenceReference, RequirementEvidenceReference, RequirementImpactDisposition, RequirementReconciliation, RequirementSourceEvidence
+from app.ai.requirement_schemas import ExistingEvidenceReference, RequirementCorrectionKind, RequirementEvidenceReference, RequirementImpactDisposition, RequirementReconciliation, RequirementSourceEvidence
 from app.ai.schemas import ResolverSourceField
 from app.contracts.requirement_reconciliation import RequirementAttachmentContext, RequirementReconcilerInput, serialize_requirement_context_snapshot
 from app.models.ai_proposal import AIProposal
-from app.models.enums import ProposalType
+from app.models.enums import ProposalType, RequirementState
 from app.repositories.lineage import LineageRepository
 
 
@@ -94,6 +94,7 @@ class RequirementReconciliationService:
             details={
                 "existing_impact_count": len(reconciliation.existing_impacts),
                 "new_requirement_count": len(reconciliation.new_requirements),
+                "correction_count": len(reconciliation.corrections),
                 "concern_count": len(reconciliation.concerns),
                 "conflict_count": len(reconciliation.conflicts),
                 "model_identifier": self.model_identifier,
@@ -176,6 +177,16 @@ class RequirementReconciliationService:
             for evidence in impact.evidence
         )
         references.extend(
+            (evidence, correction.requirement_id)
+            for correction in reconciliation.corrections
+            for evidence in correction.evidence
+        )
+        references.extend(
+            (ExistingEvidenceReference(evidence_item_id=evidence_id), correction.requirement_id)
+            for correction in reconciliation.corrections
+            for evidence_id in correction.target_evidence_item_ids
+        )
+        references.extend(
             (evidence, None)
             for proposal in reconciliation.new_requirements
             for evidence in proposal.evidence
@@ -215,6 +226,9 @@ class RequirementReconciliationService:
             impact.requirement_id for impact in reconciliation.existing_impacts
         }
         referenced_requirement_ids.update(
+            correction.requirement_id for correction in reconciliation.corrections
+        )
+        referenced_requirement_ids.update(
             requirement_id
             for concern in reconciliation.concerns
             for requirement_id in concern.candidate_requirement_ids
@@ -233,6 +247,10 @@ class RequirementReconciliationService:
             if impact.disposition is not RequirementImpactDisposition.UPDATE_PROPOSED:
                 continue
             current = requirements[impact.requirement_id]
+            if current.current_state is RequirementState.RETRACTED:
+                raise RequirementReconciliationValidationError(
+                    "ordinary impacts cannot reactivate a retracted requirement"
+                )
             state_changed = (
                 impact.proposed_state is not None
                 and impact.proposed_state is not current.current_state
@@ -245,6 +263,37 @@ class RequirementReconciliationService:
                 raise RequirementReconciliationValidationError(
                     "UPDATE_PROPOSED must change the current state or expected date"
                 )
+
+        supplied_evidence = {
+            evidence.evidence_item_id: evidence
+            for evidence in context.existing_valid_evidence
+        }
+        for correction in reconciliation.corrections:
+            current = requirements[correction.requirement_id]
+            if current.current_state is RequirementState.RETRACTED:
+                raise RequirementReconciliationValidationError(
+                    "a retracted requirement cannot be corrected or withdrawn again"
+                )
+            if (
+                correction.previous_state is not current.current_state
+                or correction.previous_expected_date != current.expected_date
+            ):
+                raise RequirementReconciliationValidationError(
+                    "correction previous values do not match supplied requirement"
+                )
+            if correction.kind is RequirementCorrectionKind.CORRECTION and (
+                correction.proposed_state in (None, current.current_state)
+                and correction.proposed_expected_date in (None, current.expected_date)
+            ):
+                raise RequirementReconciliationValidationError(
+                    "CORRECTION must change the current state or expected date"
+                )
+            for evidence_id in correction.target_evidence_item_ids:
+                prior = supplied_evidence.get(evidence_id)
+                if prior is None or prior.requirement_id != correction.requirement_id:
+                    raise RequirementReconciliationValidationError(
+                        "correction target evidence was not supplied for the requirement"
+                    )
 
         supplied_evidence_ids = {
             evidence.evidence_item_id
@@ -277,6 +326,11 @@ class RequirementReconciliationService:
             evidence
             for proposal in reconciliation.new_requirements
             for evidence in proposal.evidence
+        )
+        references.extend(
+            evidence
+            for correction in reconciliation.corrections
+            for evidence in correction.evidence
         )
         references.extend(
             evidence
