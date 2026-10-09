@@ -1,0 +1,15 @@
+{
+  "case_id": "EVAL-13", "title": "Two filed notes establish a partially completed instrument handover", "category": "PARTIAL_FULFILLMENT",
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-kestrel-files", "sender_identifier": "mila.sorrel@kestrel.example", "subject": "KFB-391 handover register", "body": "For KFB-391, please bring the instrument handover register up to date using the filed delivery and calibration notes. I do not have a new progress report to add; those notes are the records to work from. Mila", "received_at": "2027-06-07T09:35:00Z"},
+    "candidate_projects": [{"project_id": "kestrel-filter", "project_code": "KFB-391", "name": "Kestrel Filter Bank", "normalized_name": "kestrel filter bank", "known_contact_identifiers": ["mila.sorrel@kestrel.example"]}],
+    "requirements": [{"requirement_id": "kestrel-instrument-handover", "project_id": "kestrel-filter", "name": "Instrument handover", "description": "Deliver the flow meters and provide their signed calibration certificates. Both are needed for handover.", "state": "OPEN", "expected_date": null}],
+    "evidence": [
+      {"evidence_id": "kestrel-delivery-note", "project_id": "kestrel-filter", "requirement_id": "kestrel-instrument-handover", "source_type": "filed_note", "excerpt": "Delivery note DN-581: all flow meters for the instrument handover have been received and counted."},
+      {"evidence_id": "kestrel-calibration-note", "project_id": "kestrel-filter", "requirement_id": "kestrel-instrument-handover", "source_type": "filed_note", "excerpt": "Calibration desk note CD-246: the signed certificates for those flow meters are still outstanding."},
+      {"evidence_id": "kestrel-catering-note", "project_id": "kestrel-filter", "source_type": "filed_note", "excerpt": "The site lunch order has been changed to vegetarian sandwiches."}
+    ]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["kestrel-filter"], "review_required": false, "proposal_type": "REQUIREMENT_RECONCILIATION", "policy_decision": "ALLOW_AUTO_ACTION", "evidence_ids": ["kestrel-delivery-note", "kestrel-calibration-note"], "requirement_states": [{"requirement_id": "kestrel-instrument-handover", "state": "PARTIAL", "expected_date": null}]},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_id": "kestrel-filter"}, {"action_type": "CHANGE_REQUIREMENT_STATE", "target_id": "kestrel-instrument-handover", "parameters": {"state": "PARTIAL", "expected_date": null}}], "must_not": [{"action_type": "CREATE_REQUIREMENT"}, {"action_type": "CHANGE_REQUIREMENT_STATE", "parameters": {"state": "SATISFIED"}}], "require_no_document_filing": true}
+}

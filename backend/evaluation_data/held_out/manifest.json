@@ -1,8 +1,13 @@
 {
   "schema_version": "1",
-  "dataset_version": "0.1.0-draft",
+  "dataset_version": "1.0.0",
   "split": "held_out",
-  "status": "editable",
-  "case_files": [],
-  "content_hash": null
+  "status": "frozen",
+  "case_files": [
+    "eval_01.json", "eval_02.json", "eval_03.json", "eval_04.json", "eval_05.json",
+    "eval_06.json", "eval_07.json", "eval_08.json", "eval_09.json", "eval_10.json",
+    "eval_11.json", "eval_12.json", "eval_13.json", "eval_14.json", "eval_15.json",
+    "eval_16.json", "eval_17.json", "eval_18.json", "eval_19.json", "eval_20.json"
+  ],
+  "content_hash": "sha256:f55e6174c4d3ed97348fcdf3aa2afe2cd72821f952d8a430d1f98c65af9514bf"
 }

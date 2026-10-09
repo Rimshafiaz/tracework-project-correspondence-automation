@@ -15,7 +15,7 @@ from app.db.base import Base
 from app.evaluation.actions import ActionType
 from app.evaluation.contracts import (
     ActionExpectation, EvaluatedSystem, EvaluationCase, EvaluationCaseResult,
-    EvaluationCorrection, EvaluationModelMetadata, EvaluationStage, EvaluationSystemResult,
+    EvaluationCorrection, EvaluationModelMetadata, EvaluationSourceEvidence, EvaluationStage, EvaluationSystemResult,
     ExpectedConflict, ExpectedNewRequirement, ExpectedRequirementState,
 )
 from app.evaluation.project_resolver import _fixture_uuid
@@ -285,7 +285,12 @@ def _capture(session, case, labels, resolution, project_proposal, proposal, eval
         project_resolution=resolution.status.value, project_ids=tuple(label(value) for value in resolution.project_ids),
         requirement_states=tuple(states), review_required=evaluation.decision is PolicyDecision.REVIEW_REQUIRED if evaluation else resolution.status.value == "REVIEW_REQUIRED",
         policy={"policy_version": evaluation.policy_version, "decision": evaluation.decision, "triggered_rule_ids": evaluation.triggered_rule_ids, "reasons": evaluation.reasons} if evaluation else None,
-        proposal_type=proposal.proposal_type, evidence_ids=tuple(label(item.id) for item in evidence), actions=tuple(actions), new_requirements=new_requirements,
+        proposal_type=proposal.proposal_type, proposal_id=proposal.id,
+        source_evidence=tuple(EvaluationSourceEvidence(evidence_id=label(item.id),
+            correspondence_event_id=item.correspondence_event_id, project_id=label(item.project_id) if item.project_id else None,
+            proposal_id=proposal.id, validity=item.validity) for item in evidence
+            if item.id not in original_evidence and item.source_type in {"body", "subject", "attachment_text"}),
+        evidence_ids=tuple(label(item.id) for item in evidence), actions=tuple(actions), new_requirements=new_requirements,
         conflicts=tuple(ExpectedConflict(conflict_type="project_identity", evidence_ids=reference_ids(
             (*item.signal_references, *item.source_evidence), items=project_evidence), description=item.description)
             for item in resolution.conflicts) + (tuple(ExpectedConflict(conflict_type="requirement_evidence",

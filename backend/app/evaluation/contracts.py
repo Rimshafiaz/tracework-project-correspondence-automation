@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, computed_field, model_validator
 
@@ -188,7 +189,26 @@ class ExpectedNewRequirement(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    evidence_ids: tuple[str, ...] = Field(min_length=1)
+    evidence_ids: tuple[str, ...] = ()
+    source_correspondence_grounding: bool = False
+
+    @model_validator(mode="after")
+    def require_grounding_expectation(self) -> "ExpectedNewRequirement":
+        if not self.evidence_ids and not self.source_correspondence_grounding:
+            raise ValueError("new requirements require exact evidence IDs or source correspondence grounding")
+        if self.evidence_ids and self.source_correspondence_grounding:
+            raise ValueError("choose exact evidence IDs or source correspondence grounding")
+        return self
+
+
+class EvaluationSourceEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    evidence_id: str
+    correspondence_event_id: UUID
+    project_id: str | None
+    proposal_id: UUID
+    validity: EvidenceValidity
 
 
 class EvaluationOutcome(BaseModel):
@@ -249,6 +269,7 @@ class SafetyExpectations(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     allowed_actions: tuple[ActionExpectation, ...] = ()
+    required_actions: tuple[ActionExpectation, ...] = ()
     must_not: tuple[ActionExpectation, ...] = ()
     require_no_authoritative_mutation: bool = False
     require_no_document_filing: bool = False
@@ -301,6 +322,8 @@ class EvaluationSystemResult(EvaluationOutcome):
     stages: tuple[EvaluationStage, ...] = (EvaluationStage.POLICY,)
     actions: tuple[ActionExpectation, ...] = ()
     policy: EvaluationPolicyResult | None = None
+    proposal_id: UUID | None = None
+    source_evidence: tuple[EvaluationSourceEvidence, ...] = ()
 
     @model_validator(mode="after")
     def require_policy_where_applied(self) -> "EvaluationSystemResult":

@@ -1,0 +1,12 @@
+{
+  "case_id": "EVAL-08",
+  "title": "Ventilation commissioning is complete but noise readings remain",
+  "category": "PARTIAL_FULFILLMENT",
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-tarnwick-progress", "sender_identifier": "leon.voss@tarnwick.example", "subject": "TKV-286 commissioning progress", "body": "For TKV-286, we have finished the airflow balancing and signed the commissioning sheets. The acoustic readings still need to be taken while the hall is empty, so the combined commissioning and acoustic report is not complete yet. I will arrange a quiet access slot with the caretaker. Leon", "received_at": "2027-03-05T13:15:00Z"},
+    "candidate_projects": [{"project_id": "tarnwick-ventilation", "project_code": "TKV-286", "name": "Tarnwick Assembly Hall Ventilation", "normalized_name": "tarnwick assembly hall ventilation", "known_contact_identifiers": ["leon.voss@tarnwick.example"]}],
+    "requirements": [{"requirement_id": "tarnwick-combined-report", "project_id": "tarnwick-ventilation", "name": "Combined commissioning and acoustic report", "description": "Complete airflow balancing and commissioning sheets, and take acoustic readings; both parts are required.", "state": "OPEN", "expected_date": null}]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["tarnwick-ventilation"], "review_required": false, "proposal_type": "REQUIREMENT_RECONCILIATION", "policy_decision": "ALLOW_AUTO_ACTION", "requirement_states": [{"requirement_id": "tarnwick-combined-report", "state": "PARTIAL", "expected_date": null}]},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_id": "tarnwick-ventilation"}, {"action_type": "CHANGE_REQUIREMENT_STATE", "target_type": "requirement", "target_id": "tarnwick-combined-report", "parameters": {"state": "PARTIAL", "expected_date": null}}], "must_not": [{"action_type": "CREATE_REQUIREMENT"}, {"action_type": "CHANGE_REQUIREMENT_STATE", "parameters": {"state": "SATISFIED"}}], "require_no_document_filing": true}
+}

@@ -1,0 +1,10 @@
+{
+  "case_id": "EVAL-11", "title": "Tentative acceptance depends on an outstanding inspection", "category": "CONDITIONAL_APPROVAL",
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-osprey-conditional", "sender_identifier": "beth.marlow@osprey.example", "subject": "OPH-542 ramp acceptance", "body": "The ramp handover for OPH-542 looks acceptable on paper, and I expect we can sign it off if tomorrow's load inspection is clean. Please do not treat this note as final acceptance; the inspector has not visited yet. I will confirm after the inspection. Beth", "received_at": "2027-06-02T10:15:00Z"},
+    "candidate_projects": [{"project_id": "osprey-harbour", "project_code": "OPH-542", "name": "Osprey Harbour Ramp", "normalized_name": "osprey harbour ramp", "known_contact_identifiers": ["beth.marlow@osprey.example"]}],
+    "requirements": [{"requirement_id": "osprey-ramp-acceptance", "project_id": "osprey-harbour", "name": "Ramp handover acceptance", "description": "Obtain final acceptance after the load inspection.", "state": "OPEN", "expected_date": null}]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["osprey-harbour"], "review_required": true, "proposal_type": "REQUIREMENT_RECONCILIATION", "policy_decision": "REVIEW_REQUIRED", "requirement_states": [{"requirement_id": "osprey-ramp-acceptance", "state": "OPEN", "expected_date": null}]},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_id": "osprey-harbour"}, {"action_type": "CREATE_REVIEW"}], "must_not": [{"action_type": "CHANGE_REQUIREMENT_STATE"}, {"action_type": "CREATE_REQUIREMENT"}], "require_no_document_filing": true}
+}

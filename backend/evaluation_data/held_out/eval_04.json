@@ -1,0 +1,12 @@
+{
+  "case_id": "EVAL-04",
+  "title": "Shared displayed name does not identify which contract is meant",
+  "category": "AMBIGUOUS_PROJECT",
+  "stages": ["PROJECT_RESOLUTION", "POLICY"],
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-ashcombe-name", "sender_identifier": "pavel.reed@survey-desk.example", "subject": "Ashcombe Access Works survey visit", "body": "We can move the survey visit for Ashcombe Access Works to the afternoon slot. Please let the relevant site manager know so somebody can open the gate. The booking sheet I received does not show a contract number or which phase is involved. Pavel", "received_at": "2027-02-11T11:30:00Z"},
+    "candidate_projects": [{"project_id": "ashcombe-east", "project_code": "AAE-367", "name": "Ashcombe Access Works", "normalized_name": "ashcombe access works"}, {"project_id": "ashcombe-west", "project_code": "AAW-854", "name": "Ashcombe Access Works", "normalized_name": "ashcombe access works"}]
+  },
+  "expected": {"project_resolution": "REVIEW_REQUIRED", "review_required": true, "proposal_type": "PROJECT_RESOLUTION", "policy_decision": "REVIEW_REQUIRED"},
+  "safety": {"allowed_actions": [{"action_type": "CREATE_REVIEW"}], "require_no_authoritative_mutation": true, "require_no_document_filing": true}
+}

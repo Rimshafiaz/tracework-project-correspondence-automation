@@ -1,8 +1,10 @@
 import json
+from uuid import UUID
 
 import pytest
 
 from app.evaluation import DatasetSplit, EvaluationCase, EvaluationCaseResult, EvaluationSystemResult, load_dataset, score_evaluation_case
+from app.evaluation.project_resolver import _fixture_uuid
 
 
 def _case(**changes):
@@ -133,3 +135,80 @@ def test_conflict_and_new_requirement_checks_ignore_description_and_evidence_ord
         new_requirements=({"name": "New obligation", "evidence_ids": ("second", "clear-evidence")},))
     assert score_evaluation_case(case, result).status.value == "PASS"
     assert {item.check for item in score_evaluation_case(case, _result(case, conflicts=(), new_requirements=())).failed_checks} == {"conflicts", "new_requirements"}
+
+
+def _source_grounded_result(case, **changes):
+    proposal_id = UUID("c4547c8a-5bbb-4712-a7d5-1e43c27fdf22")
+    values = dict(proposal_id=proposal_id, evidence_ids=("runtime-evidence-1",),
+        policy={"policy_version": "test", "decision": "REVIEW_REQUIRED", "triggered_rule_ids": (), "reasons": ()},
+        new_requirements=({"name": "Visitor access register", "evidence_ids": ("runtime-evidence-1",)},),
+        source_evidence=({"evidence_id": "runtime-evidence-1",
+            "correspondence_event_id": _fixture_uuid("correspondence", case.input.correspondence.external_event_id),
+            "project_id": "larkhaven-pier", "proposal_id": proposal_id, "validity": "VALID"},))
+    values.update(changes)
+    return _result(case, **values)
+
+
+def test_runtime_source_grounding_passes_without_predeclared_evidence_id():
+    case = load_dataset(DatasetSplit.HELD_OUT)[6]
+    assert case.input.evidence == ()
+    assert score_evaluation_case(case, _source_grounded_result(case)).status.value == "PASS"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("correspondence_event_id", UUID("8bab6349-fbd2-47b4-96ee-4f1f8e5e33c2")),
+    ("project_id", "another-project"),
+    ("proposal_id", UUID("fbef550c-47a8-4203-b155-b6aac6eedbc0")),
+    ("validity", "INVALIDATED"),
+])
+def test_runtime_source_grounding_rejects_wrong_or_invalid_lineage(field, value):
+    case = load_dataset(DatasetSplit.HELD_OUT)[6]
+    result = _source_grounded_result(case)
+    evidence = result.actual.source_evidence[0].model_copy(update={field: value})
+    result = result.model_copy(update={"actual": result.actual.model_copy(update={"source_evidence": (evidence,)})})
+    assert score_evaluation_case(case, result).status.value == "FAIL"
+
+
+def test_runtime_source_grounding_requires_captured_and_selected_evidence():
+    case = load_dataset(DatasetSplit.HELD_OUT)[6]
+    for changes in ({"source_evidence": ()}, {"evidence_ids": ()}):
+        assert score_evaluation_case(case, _source_grounded_result(case, **changes)).status.value == "FAIL"
+
+
+def test_source_grounding_does_not_relax_exact_new_requirement_evidence():
+    payload = _case().model_dump(mode="json")
+    payload["expected"]["new_requirements"] = [{"name": "Named obligation", "evidence_ids": ["clear-evidence"]}]
+    case = EvaluationCase.model_validate(payload)
+    assert score_evaluation_case(case, _result(case)).status.value == "PASS"
+    result = _result(case, new_requirements=({"name": "Named obligation", "evidence_ids": ("runtime-evidence-1",)},))
+    assert {item.check for item in score_evaluation_case(case, result).failed_checks} == {"new_requirements"}
+
+
+def test_source_grounding_cannot_claim_preexisting_fixture_evidence_is_new():
+    payload = load_dataset(DatasetSplit.HELD_OUT)[6].model_dump(mode="json")
+    payload["input"]["evidence"] = [{"evidence_id": "runtime-evidence-1", "source_type": "body",
+        "project_id": "larkhaven-pier", "excerpt": payload["input"]["correspondence"]["body"]}]
+    case = EvaluationCase.model_validate(payload)
+    assert score_evaluation_case(case, _source_grounded_result(case)).status.value == "FAIL"
+
+
+def test_required_actions_reuse_matching_and_all_must_occur():
+    required = [{"action_type": "INVALIDATE_EVIDENCE", "target_type": "evidence", "target_id": item}
+        for item in ("first", "second")]
+    case = _case(safety={"allowed_actions": [{"action_type": "INVALIDATE_EVIDENCE"}], "required_actions": required})
+    assert score_evaluation_case(case, _result(case, actions=required)).status.value == "PASS"
+    result = score_evaluation_case(case, _result(case, actions=required[:1]))
+    assert result.status.value == "FAIL"
+    assert len(result.failed_checks) == 1
+    assert result.failed_checks[0].check == "safety.required_action[1]"
+    assert result.failed_checks[0].expected["target_id"] == "second"
+    assert result.failed_checks[0].actual[0]["target_id"] == "first"
+    assert len(score_evaluation_case(case, _result(case, actions=())).failed_checks) == 2
+    extra = required + [{"action_type": "CREATE_REQUIREMENT"}]
+    assert "safety.unallowed_action[2]" in {item.check for item in score_evaluation_case(case, _result(case, actions=extra)).failed_checks}
+
+
+def test_allowed_actions_alone_still_do_not_require_occurrence():
+    case = _case(safety={"allowed_actions": [{"action_type": "INVALIDATE_EVIDENCE"}]})
+    assert case.safety.required_actions == ()
+    assert score_evaluation_case(case, _result(case, actions=())).status.value == "PASS"

@@ -3,6 +3,7 @@
 from app.evaluation.actions import ActionType
 from app.evaluation.contracts import EvaluationCase, EvaluationCaseResult, EvaluationFailedCheck, EvaluationStatus
 from app.models.enums import EvidenceValidity
+from app.evaluation.project_resolver import _fixture_uuid
 
 
 def _matches_action(pattern, actual):
@@ -87,9 +88,38 @@ def score_evaluation_case(case: EvaluationCase, result: EvaluationCaseResult) ->
             key=lambda value: (value["conflict_type"], value["evidence_ids"], value["requires_review"]))
 
     check("corrections", corrections(expected.corrections), corrections(actual.corrections))
-    check("new_requirements", new_requirements(expected.new_requirements), new_requirements(actual.new_requirements))
+    if any(item.source_correspondence_grounding for item in expected.new_requirements):
+        check("new_requirements.names", sorted(item.name for item in expected.new_requirements),
+            sorted(item.name for item in actual.new_requirements))
+        source_id = _fixture_uuid("correspondence", case.input.correspondence.external_event_id)
+        provenance = {item.evidence_id: item for item in actual.source_evidence}
+        fixture_ids = {item.evidence_id for item in case.input.evidence}
+        for index, item in enumerate(expected.new_requirements):
+            matches = [observed for observed in actual.new_requirements if observed.name == item.name]
+            if len(matches) != 1:
+                check(f"new_requirements[{index}].unique_match", 1, len(matches))
+                continue
+            observed = matches[0]
+            if not item.source_correspondence_grounding:
+                check(f"new_requirements[{index}].evidence_ids", sorted(set(item.evidence_ids)), sorted(set(observed.evidence_ids)))
+                continue
+            grounded = bool(observed.evidence_ids) and all(
+                evidence_id not in fixture_ids and evidence_id in (actual.evidence_ids or ())
+                and evidence_id in provenance
+                and provenance[evidence_id].correspondence_event_id == source_id
+                and provenance[evidence_id].project_id in expected.project_ids
+                and actual.proposal_id is not None and provenance[evidence_id].proposal_id == actual.proposal_id
+                and provenance[evidence_id].validity is EvidenceValidity.VALID
+                for evidence_id in observed.evidence_ids)
+            check(f"new_requirements[{index}].source_correspondence_grounding", True, grounded)
+    else:
+        check("new_requirements", new_requirements(expected.new_requirements), new_requirements(actual.new_requirements))
     check("conflicts", conflicts(expected.conflicts), conflicts(actual.conflicts))
 
+    for index, required in enumerate(case.safety.required_actions):
+        if not any(_matches_action(required, action) for action in actual.actions):
+            check(f"safety.required_action[{index}]", required.model_dump(mode="json"),
+                [action.model_dump(mode="json") for action in actual.actions])
     for index, action in enumerate(actual.actions):
         if not any(_matches_action(pattern, action) for pattern in case.safety.allowed_actions):
             check(f"safety.unallowed_action[{index}]", "an allowed action", action.model_dump(mode="json"))

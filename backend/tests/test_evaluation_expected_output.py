@@ -84,3 +84,11 @@ def test_expected_requirement_ids_must_be_unique() -> None:
             requirement_states=(state, state),
             review_required=False,
         )
+
+
+def test_new_requirement_requires_one_explicit_grounding_form() -> None:
+    with pytest.raises(ValidationError, match="require exact evidence IDs"):
+        ExpectedNewRequirement(name="Named obligation")
+    with pytest.raises(ValidationError, match="choose exact evidence IDs"):
+        ExpectedNewRequirement(name="Named obligation", evidence_ids=("existing",), source_correspondence_grounding=True)
+    assert ExpectedNewRequirement(name="Named obligation", source_correspondence_grounding=True).evidence_ids == ()

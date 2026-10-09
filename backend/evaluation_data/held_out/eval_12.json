@@ -1,0 +1,10 @@
+{
+  "case_id": "EVAL-12", "title": "A visitor's travel note has no bearing on project obligations", "category": "CLEAR_CORRESPONDENCE",
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-pennacre-travel", "sender_identifier": "arun.finch@pennacre.example", "subject": "PNC-768 visitor directions", "body": "Thanks for the directions to PNC-768. I will take the local train and walk from the station, so there is no need to reserve a parking space for me. The cafe beside the entrance is a convenient meeting point. See you at reception, Arun", "received_at": "2027-06-03T12:10:00Z"},
+    "candidate_projects": [{"project_id": "pennacre-clinic", "project_code": "PNC-768", "name": "Pennacre Clinic Extension", "normalized_name": "pennacre clinic extension", "known_contact_identifiers": ["arun.finch@pennacre.example"]}],
+    "requirements": [{"requirement_id": "pennacre-steriliser-record", "project_id": "pennacre-clinic", "name": "Steriliser validation record", "state": "OPEN", "expected_date": null}]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["pennacre-clinic"], "review_required": false, "proposal_type": "REQUIREMENT_RECONCILIATION", "policy_decision": "ALLOW_AUTO_ACTION", "requirement_states": [{"requirement_id": "pennacre-steriliser-record", "state": "OPEN", "expected_date": null}]},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_id": "pennacre-clinic"}], "must_not": [{"action_type": "CHANGE_REQUIREMENT_STATE"}, {"action_type": "CREATE_REQUIREMENT"}], "require_no_document_filing": true}
+}

@@ -1,0 +1,12 @@
+{
+  "case_id": "EVAL-02",
+  "title": "Cost-allocation aside supplies the project code",
+  "category": "CLEAR_CORRESPONDENCE",
+  "stages": ["PROJECT_RESOLUTION", "POLICY"],
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-saltmere-cost", "sender_identifier": "rafi.chen@saltmere.example", "subject": "Hire invoice allocation", "body": "The lift hire invoice includes an extra afternoon because the operator stayed for the cable pull. Accounts can put the whole amount against SCG-482; there is no need to split it with the warehouse job. I have checked the timesheet with the site supervisor. Regards, Rafi", "received_at": "2027-02-09T14:25:00Z"},
+    "candidate_projects": [{"project_id": "saltmere-gallery", "project_code": "SCG-482", "name": "Saltmere Cable Gallery", "normalized_name": "saltmere cable gallery", "known_contact_identifiers": ["rafi.chen@saltmere.example"]}, {"project_id": "saltmere-warehouse", "project_code": "SWH-593", "name": "Saltmere Stores Refurbishment", "normalized_name": "saltmere stores refurbishment"}]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["saltmere-gallery"], "review_required": false, "proposal_type": "PROJECT_RESOLUTION", "policy_decision": "ALLOW_AUTO_ACTION"},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_type": "project", "target_id": "saltmere-gallery"}], "require_no_document_filing": true}
+}

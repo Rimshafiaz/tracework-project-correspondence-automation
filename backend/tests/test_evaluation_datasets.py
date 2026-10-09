@@ -17,8 +17,12 @@ def test_development_and_held_out_datasets_are_separate() -> None:
             (directory / "manifest.json").read_text(encoding="utf-8")
         )
         assert manifest.split is split
-        assert manifest.status is DatasetStatus.EDITABLE
-        assert manifest.content_hash is None
+        if split is DatasetSplit.HELD_OUT:
+            assert manifest.status is DatasetStatus.FROZEN
+            assert manifest.content_hash.startswith("sha256:")
+        else:
+            assert manifest.status is DatasetStatus.EDITABLE
+            assert manifest.content_hash is None
     assert len(
         DatasetManifest.model_validate_json(
             (development_directory / "manifest.json").read_text(encoding="utf-8")
@@ -28,7 +32,7 @@ def test_development_and_held_out_datasets_are_separate() -> None:
         DatasetManifest.model_validate_json(
             (held_out_directory / "manifest.json").read_text(encoding="utf-8")
         ).case_files
-        == ()
+        == tuple(f"eval_{index:02}.json" for index in range(1, 21))
     )
 
 

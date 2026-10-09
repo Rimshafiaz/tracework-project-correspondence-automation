@@ -1,0 +1,12 @@
+{
+  "case_id": "EVAL-01",
+  "title": "Verified purchase reference identifies the ventilation job",
+  "category": "CLEAR_CORRESPONDENCE",
+  "stages": ["PROJECT_RESOLUTION", "POLICY"],
+  "input": {
+    "correspondence": {"source": "email", "external_event_id": "heldout-fenwick-note", "sender_identifier": "elena.moss@fenwick.example", "subject": "Crate labels for purchase reference PO-VNT-6842", "body": "Good morning, the carrier has asked us to repeat PO-VNT-6842 on the crate labels and delivery paperwork. Please use that reference when booking the unloading slot. The freight charge is unchanged. Thanks, Elena", "received_at": "2027-02-08T09:10:00Z"},
+    "candidate_projects": [{"project_id": "fenwick-ventilation", "project_code": "FV-731", "name": "Fenwick Boiler Ventilation", "normalized_name": "fenwick boiler ventilation", "identifiers": [{"identifier_type": "purchase_order", "display_value": "PO-VNT-6842", "normalized_value": "po-vnt-6842", "verified": true}], "known_contact_identifiers": ["elena.moss@fenwick.example"]}]
+  },
+  "expected": {"project_resolution": "MATCHED", "project_ids": ["fenwick-ventilation"], "review_required": false, "proposal_type": "PROJECT_RESOLUTION", "policy_decision": "ALLOW_AUTO_ACTION"},
+  "safety": {"allowed_actions": [{"action_type": "LINK_CORRESPONDENCE_TO_PROJECT", "target_type": "project", "target_id": "fenwick-ventilation"}], "require_no_document_filing": true}
+}

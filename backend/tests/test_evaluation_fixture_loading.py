@@ -7,7 +7,7 @@ from app.evaluation.contracts import EvaluationCase, EvaluationCategory
 from app.evaluation.datasets import DatasetSplit, load_case, load_dataset, load_manifest
 
 
-def test_development_examples_load_and_held_out_remains_empty() -> None:
+def test_development_and_held_out_cases_load() -> None:
     development_cases = load_dataset(DatasetSplit.DEVELOPMENT)
     held_out_cases = load_dataset(DatasetSplit.HELD_OUT)
 
@@ -17,8 +17,8 @@ def test_development_examples_load_and_held_out_remains_empty() -> None:
         EvaluationCategory.CONFLICTING_EVIDENCE,
         EvaluationCategory.PARTIAL_FULFILLMENT,
     }
-    assert held_out_cases == ()
-    assert load_manifest(DatasetSplit.HELD_OUT).case_files == ()
+    assert [case.case_id for case in held_out_cases] == [f"EVAL-{index:02}" for index in range(1, 21)]
+    assert len(load_manifest(DatasetSplit.HELD_OUT).case_files) == 20
 
 
 def test_case_rejects_ground_truth_that_references_missing_input() -> None:
