@@ -2,6 +2,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.models.openrouter import OpenRouterModel
 
 from app.ai.prompts.requirement_reconciler import REQUIREMENT_RECONCILER_PROMPT_VERSION
 from app.ai.requirement_reconciler import build_requirement_reconciler_agent
@@ -59,6 +60,32 @@ def test_requirement_reconciler_supports_groq_without_google_key() -> None:
         )
 
 
+def test_requirement_reconciler_supports_openrouter_without_google_or_groq_key() -> None:
+    agent = build_requirement_reconciler_agent(
+        Settings(
+            database_url=DATABASE_URL,
+            requirement_reconciler_provider="openrouter",
+            requirement_reconciler_model="google/gemma-4-26b-a4b-it:free",
+            openrouter_api_key=SecretStr("test-key"),
+        )
+    )
+
+    assert isinstance(agent.model, OpenRouterModel)
+    assert agent.model.model_name == "google/gemma-4-26b-a4b-it:free"
+    assert agent.output_type is RequirementReconciliation
+    assert agent._function_toolset.tools == {}
+
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        build_requirement_reconciler_agent(
+            Settings(
+                database_url=DATABASE_URL,
+                _env_file=None,
+                requirement_reconciler_provider="openrouter",
+                requirement_reconciler_model="google/gemma-4-26b-a4b-it:free",
+            )
+        )
+
+
 def test_requirement_reconciler_model_name_cannot_be_blank() -> None:
     with pytest.raises(ValidationError, match="AI model name"):
         Settings(
@@ -68,7 +95,7 @@ def test_requirement_reconciler_model_name_cannot_be_blank() -> None:
 
 
 def test_reply_drafter_model_name_uses_default_and_rejects_blank() -> None:
-    assert Settings(database_url=DATABASE_URL).reply_drafter_model == "gemini-3.7-flash"
+    assert Settings(database_url=DATABASE_URL, _env_file=None).reply_drafter_model == "gemini-3.7-flash"
     with pytest.raises(ValidationError, match="AI model name"):
         Settings(
             database_url=DATABASE_URL,
@@ -76,6 +103,6 @@ def test_reply_drafter_model_name_uses_default_and_rejects_blank() -> None:
         )
 
 
-def test_agent_provider_values_are_limited_to_gemini_or_groq() -> None:
+def test_agent_provider_values_are_limited_to_gemini_groq_or_openrouter() -> None:
     with pytest.raises(ValidationError, match="project_resolver_provider"):
         Settings(database_url=DATABASE_URL, project_resolver_provider="other")

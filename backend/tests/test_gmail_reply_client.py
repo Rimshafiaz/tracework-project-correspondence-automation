@@ -1,9 +1,13 @@
 from base64 import urlsafe_b64decode
 from email import message_from_bytes
+from json import loads
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from google.auth.credentials import AnonymousCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import HttpRequest
 
 from app.adapters.gmail.reply_client import (
     GMAIL_REPLY_METADATA_HEADERS,
@@ -124,7 +128,54 @@ def test_recovery_search_is_bounded_and_send_returns_validated_receipt():
     assert captured["maxResults"] == 3
     assert captured["send"] == {
         "userId": "me",
-        "body": {"raw": "raw-content"},
-        "threadId": "thread-1",
+        "body": {"raw": "raw-content", "threadId": "thread-1"},
     }
     assert receipt.message_id == "sent-2"
+
+
+def test_send_constructs_real_gmail_request_with_raw_and_thread_in_body(monkeypatch):
+    service = build("gmail", "v1", credentials=AnonymousCredentials(), static_discovery=True)
+    captured = {}
+
+    def execute(request):
+        captured["method"] = request.method
+        captured["body"] = loads(request.body)
+        return {"id": "sent-2", "threadId": "thread-1"}
+
+    monkeypatch.setattr(HttpRequest, "execute", execute)
+    receipt = send_gmail_reply(
+        service,
+        SimpleNamespace(raw="raw-content", thread_id="thread-1"),
+    )
+
+    assert captured == {
+        "method": "POST",
+        "body": {"raw": "raw-content", "threadId": "thread-1"},
+    }
+    assert receipt.message_id == "sent-2"
+
+
+def test_recovery_search_treats_gmail_zero_result_response_as_empty():
+    request = SimpleNamespace(execute=lambda: {"resultSizeEstimate": 0})
+    messages = SimpleNamespace(list=lambda **_kwargs: request)
+    service = SimpleNamespace(users=lambda: SimpleNamespace(messages=lambda: messages))
+
+    result = search_sent_by_rfc_message_id(
+        service,
+        rfc_message_id="<reply@example.test>",
+    )
+
+    assert result.message_ids == ()
+    assert result.thread_ids == ()
+
+
+def test_recovery_search_rejects_explicit_malformed_messages():
+    request = SimpleNamespace(execute=lambda: {"messages": {}})
+    messages = SimpleNamespace(list=lambda **_kwargs: request)
+    service = SimpleNamespace(users=lambda: SimpleNamespace(messages=lambda: messages))
+
+    with pytest.raises(GmailReplyMetadataError, match="invalid messages"):
+        search_sent_by_rfc_message_id(
+            service,
+            rfc_message_id="<reply@example.test>",
+        )

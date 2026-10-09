@@ -163,4 +163,7 @@ def _can_retry_send(draft: ReplyDraft) -> bool:
         "GMAIL_HTTP_504",
         "GMAIL_TIMEOUT_UNCERTAIN",
         "GMAIL_CONNECTION_UNCERTAIN",
+        # The send service re-fetches and validates live metadata before any resend.
+        "GMAIL_METADATA_INVALID",
+        "GMAIL_SEND_FAILED",
     }

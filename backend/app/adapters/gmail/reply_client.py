@@ -149,7 +149,7 @@ def search_sent_by_rfc_message_id(
         )
         .execute()
     )
-    messages = response.get("messages", ())
+    messages = response.get("messages", [])
     if not isinstance(messages, list):
         raise GmailReplyMetadataError("Gmail recovery response has invalid messages")
     ids: list[str] = []
@@ -169,8 +169,7 @@ def send_gmail_reply(service: Any, reply: GmailReplyMessage) -> GmailSendReceipt
         .messages()
         .send(
             userId="me",
-            body={"raw": reply.raw},
-            threadId=reply.thread_id,
+            body={"raw": reply.raw, "threadId": reply.thread_id},
         )
         .execute()
     )

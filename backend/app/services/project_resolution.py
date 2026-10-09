@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 import httpx2
 from groq import APIConnectionError as GroqAPIConnectionError
+from openai import APIConnectionError as OpenRouterAPIConnectionError
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 
@@ -138,7 +139,9 @@ class ProjectResolutionService:
     def _is_retryable_provider_error(exc: Exception) -> bool:
         if isinstance(exc, ModelHTTPError):
             return exc.status_code in PROJECT_RESOLVER_RETRYABLE_STATUS_CODES
-        if isinstance(exc, ModelAPIError) and isinstance(exc.__cause__, GroqAPIConnectionError):
+        if isinstance(exc, ModelAPIError) and isinstance(
+            exc.__cause__, (GroqAPIConnectionError, OpenRouterAPIConnectionError)
+        ):
             return True
         return isinstance(
             exc,

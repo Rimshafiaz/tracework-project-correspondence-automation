@@ -8,11 +8,13 @@ from uuid import uuid4
 import pytest
 import httpx
 from groq import APIConnectionError as GroqAPIConnectionError
+from openai import APIConnectionError as OpenRouterAPIConnectionError
 from pydantic import SecretStr
 from pydantic_ai import UsageLimits
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.usage import RunUsage
 
 from app.ai.reply_drafter import (
@@ -175,7 +177,7 @@ def _deps(scoped, follow_up_id):
 
 def test_agent_has_exactly_six_zero_argument_scoped_tools():
     agent = build_reply_drafter_agent(
-        Settings(database_url=DATABASE_URL, google_api_key=SecretStr("test-key"))
+        Settings(database_url=DATABASE_URL, _env_file=None, google_api_key=SecretStr("test-key"))
     )
 
     assert isinstance(agent.model, GoogleModel)
@@ -232,6 +234,40 @@ def test_reply_drafter_supports_groq_without_google_key() -> None:
                 _env_file=None,
                 reply_drafter_provider="groq",
                 reply_drafter_model="openai/gpt-oss-120b",
+            )
+        )
+
+
+def test_reply_drafter_supports_openrouter_without_google_or_groq_key() -> None:
+    agent = build_reply_drafter_agent(
+        Settings(
+            database_url=DATABASE_URL,
+            reply_drafter_provider="openrouter",
+            reply_drafter_model="google/gemma-4-26b-a4b-it:free",
+            openrouter_api_key=SecretStr("test-key"),
+        )
+    )
+
+    assert isinstance(agent.model, OpenRouterModel)
+    assert agent.model.model_name == "google/gemma-4-26b-a4b-it:free"
+    assert agent.output_type is ReplyDraftProposal
+    assert agent._max_output_retries == 2
+    assert set(agent._function_toolset.tools) == {
+        "get_due_follow_up",
+        "get_project_summary",
+        "get_requirement_context",
+        "list_recent_correspondence",
+        "list_follow_up_history",
+        "list_document_revision_status",
+    }
+
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        build_reply_drafter_agent(
+            Settings(
+                database_url=DATABASE_URL,
+                _env_file=None,
+                reply_drafter_provider="openrouter",
+                reply_drafter_model="google/gemma-4-26b-a4b-it:free",
             )
         )
 
@@ -352,6 +388,15 @@ def test_reply_drafter_retries_wrapped_groq_connection_errors() -> None:
     error = ModelAPIError(model_name="groq:test", message="connection failed")
     error.__cause__ = GroqAPIConnectionError(
         request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    )
+
+    assert ReplyDrafterRunner._is_retryable_provider_error(error) is True
+
+
+def test_reply_drafter_retries_wrapped_openrouter_connection_errors() -> None:
+    error = ModelAPIError(model_name="openrouter:test", message="connection failed")
+    error.__cause__ = OpenRouterAPIConnectionError(
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
     )
 
     assert ReplyDrafterRunner._is_retryable_provider_error(error) is True

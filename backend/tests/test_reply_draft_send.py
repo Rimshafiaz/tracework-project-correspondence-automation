@@ -6,7 +6,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.adapters.gmail.reply_client import GmailLiveSourceMetadata, GmailRecoverySearch, GmailSendReceipt
+from app.adapters.gmail.reply_client import (
+    GmailLiveSourceMetadata,
+    GmailRecoverySearch,
+    GmailReplyMetadataError,
+    GmailSendReceipt,
+)
 from app.contracts.reply_draft_context import FollowUpReplyScope
 from app.contracts.reply_draft_send import ReplyDraftSendStatus
 from app.core.config import Settings
@@ -71,7 +76,11 @@ def _values(status=ReplyDraftStatus.APPROVED):
     lifecycle.record_retryable_failure.side_effect = fail; lifecycle.mark_sent.side_effect = sent
     eligibility = MagicMock()
     eligibility.assess.return_value = SimpleNamespace(status="DRAFTABLE", scope=scope)
-    settings = Settings(database_url="postgresql+psycopg://example", gmail_reply_message_id_domain="reply.tracework.example")
+    settings = Settings(
+        database_url="postgresql+psycopg://example",
+        gmail_account_email="tracework@example.test",
+        gmail_reply_message_id_domain="reply.tracework.example",
+    )
     service = ReplyDraftSendService(
         session=session, settings=settings, gmail_service=MagicMock(), eligibility_service=eligibility,
         reply_draft_lifecycle=lifecycle, reply_draft_repository=drafts,
@@ -131,20 +140,93 @@ def test_pending_observer_reconciles_one_match_but_never_sends(monkeypatch):
 def test_retryable_failure_resumes_as_new_owner_with_stable_attempt_id(monkeypatch):
     service, draft, scope, lifecycle, _, _ = _values(ReplyDraftStatus.RETRYABLE_FAILURE)
     draft.send_attempt_id = deterministic_send_attempt_id(draft.id)
-    monkeypatch.setattr(send_module, "fetch_live_source_metadata", lambda *_: _live(scope))
-    monkeypatch.setattr(send_module, "search_sent_by_rfc_message_id", lambda *_args, **_: GmailRecoverySearch((), ()))
-    monkeypatch.setattr(send_module, "send_gmail_reply", lambda *_: GmailSendReceipt("sent", scope.gmail_thread_id))
+    draft.send_failure_code = "GMAIL_SEND_FAILED"
+    calls = []
+    monkeypatch.setattr(send_module, "fetch_live_source_metadata", lambda *_: (calls.append("metadata"), _live(scope))[1])
+    monkeypatch.setattr(send_module, "search_sent_by_rfc_message_id", lambda *_args, **_: (calls.append("recovery"), GmailRecoverySearch((), ()))[1])
+    monkeypatch.setattr(send_module, "send_gmail_reply", lambda *_: (calls.append("send"), GmailSendReceipt("sent", scope.gmail_thread_id))[1])
     service._finalize = MagicMock(return_value=SimpleNamespace(status=ReplyDraftSendStatus.SENT_NOW))
 
-    service.send(draft.id, operator_subject="operator")
+    result = service.send(draft.id, operator_subject="operator")
 
+    assert result.status is ReplyDraftSendStatus.SENT_NOW
+    assert calls == ["metadata", "recovery", "send"]
+    service._authorize_locked.assert_called_once_with(draft)
     lifecycle.resume_send.assert_called_once_with(draft.id)
     assert draft.send_attempt_id == deterministic_send_attempt_id(draft.id)
 
 
+@pytest.mark.parametrize(
+    ("recovery", "expected_status"),
+    [
+        ("one", ReplyDraftSendStatus.RECONCILED_SENT),
+        ("ambiguous", ReplyDraftSendStatus.ACTION_REQUIRED),
+    ],
+)
+def test_retry_of_generic_send_failure_never_duplicates_recovered_or_ambiguous_send(
+    monkeypatch, recovery, expected_status
+):
+    service, draft, scope, lifecycle, _, _ = _values(ReplyDraftStatus.RETRYABLE_FAILURE)
+    draft.send_attempt_id = deterministic_send_attempt_id(draft.id)
+    draft.send_failure_code = "GMAIL_SEND_FAILED"
+    monkeypatch.setattr(send_module, "fetch_live_source_metadata", lambda *_: _live(scope))
+    matches = (
+        GmailRecoverySearch(("sent",), (scope.gmail_thread_id,))
+        if recovery == "one"
+        else GmailRecoverySearch(("sent-1", "sent-2"), (scope.gmail_thread_id,) * 2)
+    )
+    search = MagicMock(return_value=matches)
+    send = MagicMock()
+    monkeypatch.setattr(send_module, "search_sent_by_rfc_message_id", search)
+    monkeypatch.setattr(send_module, "send_gmail_reply", send)
+    service._finalize = MagicMock(
+        return_value=SimpleNamespace(status=ReplyDraftSendStatus.RECONCILED_SENT)
+    )
+
+    result = service.send(draft.id, operator_subject="operator")
+
+    assert result.status is expected_status
+    lifecycle.resume_send.assert_called_once_with(draft.id)
+    search.assert_called_once()
+    send.assert_not_called()
+    assert service._finalize.call_count == (1 if recovery == "one" else 0)
+
+
+def test_retry_metadata_failure_revalidates_and_blocks_still_malformed_source(monkeypatch):
+    service, draft, _, lifecycle, _, _ = _values(ReplyDraftStatus.RETRYABLE_FAILURE)
+    draft.send_attempt_id = deterministic_send_attempt_id(draft.id)
+    draft.send_failure_code = "GMAIL_METADATA_INVALID"
+    search = MagicMock()
+    send = MagicMock()
+    monkeypatch.setattr(
+        send_module,
+        "fetch_live_source_metadata",
+        lambda *_: (_ for _ in ()).throw(
+            GmailReplyMetadataError("Message-ID header must not be blank")
+        ),
+    )
+    monkeypatch.setattr(send_module, "search_sent_by_rfc_message_id", search)
+    monkeypatch.setattr(send_module, "send_gmail_reply", send)
+
+    result = service.send(draft.id, operator_subject="operator")
+
+    assert result.status is ReplyDraftSendStatus.ACTION_REQUIRED
+    assert result.failure_code == "GMAIL_METADATA_INVALID"
+    lifecycle.resume_send.assert_called_once_with(draft.id)
+    lifecycle.record_retryable_failure.assert_called_once_with(
+        draft.id,
+        failure_code="GMAIL_METADATA_INVALID",
+    )
+    search.assert_not_called()
+    send.assert_not_called()
+
+
 def test_missing_message_id_domain_blocks_before_pending_transition():
     service, draft, _, lifecycle, session, _ = _values()
-    service.settings = Settings(database_url="postgresql+psycopg://example")
+    service.settings = Settings(
+        database_url="postgresql+psycopg://example",
+        _env_file=None,
+    )
 
     with pytest.raises(ReplyDraftSendConfigurationError):
         service.send(draft.id, operator_subject="operator")

@@ -37,6 +37,21 @@ describe("ReplyDraftDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Retry send" })).not.toBeInTheDocument();
   });
 
+  it("shows retry only when the backend allows fresh send revalidation", async () => {
+    api.getReplyDraft.mockResolvedValue({
+      ...draft,
+      status: "RETRYABLE_FAILURE",
+      send_failure_code: "GMAIL_METADATA_INVALID",
+      can_send: false,
+      can_retry_send: true,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Retry send" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+  });
+
   it("edits through the API without changing the displayed generated original", async () => {
     const user = userEvent.setup();
     api.editReplyDraft.mockResolvedValue({ ...draft, effective: { subject: "Edited", body: "Edited body" }, edited: { subject: "Edited", body: "Edited body" } });

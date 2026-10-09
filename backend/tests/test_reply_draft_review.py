@@ -56,3 +56,26 @@ def test_review_service_reads_edit_approves_and_rejects_with_human_audit_attribu
         REPLY_DRAFT_REJECTED_AUDIT_EVENT,
     ]
     assert all(call.kwargs["actor_identifier"] == "operator" for call in lineage.create_audit_event.call_args_list)
+
+
+def test_metadata_failure_allows_only_normal_revalidated_send_retry():
+    draft = _draft(ReplyDraftStatus.RETRYABLE_FAILURE)
+    draft.send_failure_code = "GMAIL_METADATA_INVALID"
+    service, _, _ = _service(draft)
+
+    snapshot = service.get(draft.id)
+
+    assert snapshot.can_retry_send is True
+    assert snapshot.can_send is False
+
+    draft.send_failure_code = "GMAIL_AUTHORIZATION_INVALID"
+    blocked = service.get(draft.id)
+
+    assert blocked.can_retry_send is False
+    assert blocked.send_attention_required is True
+
+    draft.send_failure_code = "GMAIL_SEND_FAILED"
+    recovered = service.get(draft.id)
+
+    assert recovered.can_retry_send is True
+    assert recovered.send_attention_required is False

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 import httpx
 from groq import APIConnectionError as GroqAPIConnectionError
+from openai import APIConnectionError as OpenRouterAPIConnectionError
 from pydantic_ai import Agent, ModelResponse, ToolCallPart, UnexpectedModelBehavior
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -613,6 +614,15 @@ def test_groq_sdk_connection_error_is_retryable() -> None:
     error = ModelAPIError(model_name="groq:test", message="connection failed")
     error.__cause__ = GroqAPIConnectionError(
         request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    )
+
+    assert ProjectResolutionService._is_retryable_provider_error(error) is True
+
+
+def test_openrouter_sdk_connection_error_is_retryable() -> None:
+    error = ModelAPIError(model_name="openrouter:test", message="connection failed")
+    error.__cause__ = OpenRouterAPIConnectionError(
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
     )
 
     assert ProjectResolutionService._is_retryable_provider_error(error) is True
