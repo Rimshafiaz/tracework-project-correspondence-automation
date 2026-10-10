@@ -43,7 +43,7 @@ describe("ProjectDetailPage", () => {
     renderPage();
     expect(await screen.findByText("Security review")).toBeInTheDocument();
     expect(screen.getByText("Confirm the final review evidence.")).toBeInTheDocument();
-    expect(screen.getByText("PARTIAL")).toBeInTheDocument();
+    expect(screen.getByText("Partial")).toBeInTheDocument();
     expect(screen.getByText(/Oct 5, 2026/)).toBeInTheDocument();
   });
 

@@ -133,7 +133,7 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
               <li key={requirement.requirement_id}>
                 <span>{`Requirement ${index + 1}`}</span>
                 <div className="current-requirement-value">
-                  <strong>{requirement.exists ? requirement.state ?? "Unknown" : "Removed"}</strong>
+                  <strong>{requirement.exists ? displayValue(requirement.state ?? "Unknown") : "Removed"}</strong>
                   {requirement.exists ? (
                     <span>Expected date: {formatDateOnly(requirement.expected_date)}</span>
                   ) : null}
@@ -171,7 +171,7 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
                   </p>
                   {evidence.invalidation_reason ? (
                     <p className="invalidation-note">
-                      Current invalidation: {evidence.invalidation_reason}
+                      Current invalidation: {invalidationLabel(evidence.invalidation_reason)}
                     </p>
                   ) : null}
                 </li>
@@ -183,34 +183,6 @@ function LineageContent({ lineage }: { lineage: EvidenceLineage }) {
         )}
       </LineageSection>
 
-      <details className="lineage-secondary-details">
-        <summary>AI proposal</summary>
-        <div className="lineage-secondary-content">
-          <DefinitionList items={[
-              ["Proposal type", lineage.proposal.proposal_type],
-              ["Model", lineage.proposal.model_identifier],
-              ["Prompt version", lineage.proposal.prompt_version],
-            ]} />
-          <h4>Structured proposal</h4>
-          <pre>{JSON.stringify(lineage.proposal.structured_output, null, 2)}</pre>
-        </div>
-      </details>
-
-      <details className="lineage-secondary-details">
-        <summary>Policy technical detail</summary>
-        <div className="lineage-secondary-content">
-          <DefinitionList items={[
-            ["Policy version", lineage.policy.policy_version],
-            ["Decision", lineage.policy.decision],
-          ]} />
-          <h4>Rule identifiers</h4>
-          <ul>
-            {lineage.policy.triggered_rule_ids.map((rule) => (
-              <li className="technical-id" key={rule}>{rule}</li>
-            ))}
-          </ul>
-        </div>
-      </details>
     </div>
   );
 }
@@ -243,7 +215,7 @@ function DecisionState({ lineage }: { lineage: EvidenceLineage }) {
       <div className="decision-state-record" key={effect.requirement_id}>
         {lineage.transition.requirement_effects.length > 1 ? <h4>{`Requirement ${index + 1}`}</h4> : null}
         <table className="comparison-table"><thead><tr><th>Field</th><th>Historical</th><th>Proposed</th></tr></thead><tbody>
-          <tr><th>State</th><td>{effect.current_state}</td><td>{effect.proposed_state}</td></tr>
+          <tr><th>State</th><td>{displayValue(effect.current_state)}</td><td>{displayValue(effect.proposed_state)}</td></tr>
           {(effect.current_expected_date || effect.proposed_expected_date) ? <tr><th>Expected date</th><td>{formatDateOnly(effect.current_expected_date)}</td><td>{formatDateOnly(effect.proposed_expected_date)}</td></tr> : null}
           <tr><th>Transition</th><td colSpan={2}>{displayValue(lineage.transition.status)}</td></tr>
         </tbody></table>
@@ -260,7 +232,9 @@ function DecisionState({ lineage }: { lineage: EvidenceLineage }) {
 }
 
 function businessStateRows(state: Record<string, JsonValue>): Map<string, string> {
-  return new Map(Object.entries(state).map(([key, value]) => [humanizeKey(key), formatStateValue(key, value)]));
+  return new Map(Object.entries(state)
+    .filter(([key]) => !key.toLowerCase().includes("id") && key !== "requirements")
+    .map(([key, value]) => [humanizeKey(key), formatStateValue(key, value)]));
 }
 
 function humanizeKey(value: string): string {
@@ -314,7 +288,7 @@ function CurrentEvidenceValidity({ evidence }: { evidence: LineageEvidence[] }) 
 function attributionLabel(lineage: EvidenceLineage): string {
   if (lineage.historical_outcome.attribution === "AUTOMATIC") return "Automatic";
   if (lineage.historical_outcome.authenticated_operator_subject) {
-    return "Authenticated operator";
+    return "Team member";
   }
   if (lineage.historical_outcome.operator_supplied_actor_label) {
     return `Historical operator: ${lineage.historical_outcome.operator_supplied_actor_label}`;
@@ -325,11 +299,11 @@ function attributionLabel(lineage: EvidenceLineage): string {
 
 function lineageSubtitle(lineage: EvidenceLineage): string {
   const effect = lineage.transition.requirement_effects[0];
-  if (effect) return `Requirement change: ${effect.current_state} to ${effect.proposed_state}`;
+  if (effect) return `Requirement change: ${displayValue(effect.current_state)} to ${displayValue(effect.proposed_state)}`;
   const historicalState = stateValue(lineage.transition.historical_current_state);
   const proposedState = stateValue(lineage.transition.historical_proposed_state);
   if (historicalState && proposedState && historicalState !== proposedState) {
-    return `Requirement change: ${historicalState} to ${proposedState}`;
+    return `Requirement change: ${displayValue(historicalState)} to ${displayValue(proposedState)}`;
   }
   return lineage.transition.affected_entity_type === "CORRESPONDENCE_PROJECT_LINK"
     ? "Project association change"
@@ -357,6 +331,10 @@ function displayValue(value: string): string {
     .replaceAll("_", " ")
     .toLowerCase()
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function invalidationLabel(value: string): string {
+  return value.startsWith("Approved correction review ") ? "Approved correction" : value;
 }
 
 function stateValue(state: Record<string, JsonValue>): string | null {

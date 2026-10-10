@@ -18,6 +18,20 @@ export function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+export function formatLabel(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+export function reviewReasonLabel(value: string): string {
+  if (value === "Expected-date mutations require human review in this policy version.") {
+    return "The proposed expected date needs approval.";
+  }
+  return value.replace("operator review", "review");
+}
+
 export function humanizeIdentifierType(value: string): string {
   return value
     .split("_")

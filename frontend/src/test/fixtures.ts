@@ -52,7 +52,7 @@ export const transitionActivity: ProjectActivityEvent = {
   project_id: project.id,
   correspondence_event_id: "correspondence-1",
   requirement_id: "requirement-1",
-  summary: 'Requirement "Security review" moved OPEN to PARTIAL',
+  summary: 'Requirement "Security review" moved Open to Partial',
   attribution: "AUTOMATIC",
   authenticated_operator_subject: null,
   operator_supplied_actor_label: null,

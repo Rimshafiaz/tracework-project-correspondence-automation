@@ -39,7 +39,7 @@ describe("ProjectActivityList", () => {
 
   it("renders authenticated attribution without exposing the subject", () => {
     render(<ProjectActivityList events={[linkedActivity]} onViewEvidence={vi.fn()} />);
-    expect(screen.getByText("Authenticated operator")).toBeInTheDocument();
+    expect(screen.getByText("Team member")).toBeInTheDocument();
     expect(screen.queryByText("operator-subject")).not.toBeInTheDocument();
   });
 

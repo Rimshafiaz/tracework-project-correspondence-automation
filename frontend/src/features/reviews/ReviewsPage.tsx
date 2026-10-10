@@ -7,7 +7,7 @@ import type { ReviewQueueSummary } from "../../api/types";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { TableLoading } from "../../components/LoadingState";
-import { formatDateTime, reviewTypeLabel } from "../../lib/format";
+import { formatDateTime, reviewReasonLabel, reviewTypeLabel } from "../../lib/format";
 
 export function ReviewsPage() {
   const reviews = useQuery({ queryKey: queryKeys.reviews, queryFn: getReviews });
@@ -20,8 +20,8 @@ export function ReviewsPage() {
   const inspection = reviews.data.filter((review) => review.allowed_actions.length === 0);
   return (
     <ReviewPageFrame pendingCount={reviews.data.length}>
-      <ReviewRegister title="Needs a decision" description="Human review actions are available for the proposed authoritative change." reviews={actionable} empty="No reviews currently need a decision." />
-      <ReviewRegister title="Inspection only" description="Document revision reviews are readable here but have no mutation actions." reviews={inspection} empty="No inspection-only reviews are pending." />
+      <ReviewRegister title="Needs a decision" description="Review each proposed change before it updates the project." reviews={actionable} empty="No reviews currently need a decision." />
+      <ReviewRegister title="Inspection only" description="Previous document decisions remain available for reference." reviews={inspection} empty="No inspection-only reviews are pending." />
     </ReviewPageFrame>
   );
 }
@@ -29,7 +29,7 @@ export function ReviewsPage() {
 function ReviewPageFrame({ children, pendingCount }: { children: React.ReactNode; pendingCount?: number }) {
   return (
     <section aria-labelledby="reviews-title">
-      <header className="page-header"><div><h1 id="reviews-title">Review queue</h1><p>Cases Tracework held back from automatic mutation.</p></div>{pendingCount !== undefined ? <span className="page-header-count">{pendingCount} pending</span> : null}</header>
+      <header className="page-header"><div><h1 id="reviews-title">Review queue</h1><p>Changes waiting for a person to review.</p></div>{pendingCount !== undefined ? <span className="page-header-count">{pendingCount} pending</span> : null}</header>
       {children}
     </section>
   );
@@ -47,8 +47,8 @@ function ReviewRegister({ title, description, reviews, empty }: { title: string;
               <li key={review.review_item_id}>
                 <Link className="review-row" to={`/reviews/${review.review_item_id}`}>
                   <span className="review-type">{reviewTypeLabel(review.review_type)}</span>
-                  <span>{review.review_reason}</span>
-                  <span className="review-source">Correspondence {shortReference(review.correspondence_event_id)}</span>
+                  <span>{reviewReasonLabel(review.review_reason)}</span>
+                  <span className="review-source">Correspondence</span>
                   <time dateTime={review.created_at}>{formatDateTime(review.created_at)}</time>
                   <span className="review-arrow" aria-hidden="true">›</span>
                 </Link>
@@ -59,8 +59,4 @@ function ReviewRegister({ title, description, reviews, empty }: { title: string;
       )}
     </section>
   );
-}
-
-function shortReference(value: string): string {
-  return `${value.slice(0, 4)}...`;
 }

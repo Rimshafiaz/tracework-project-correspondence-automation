@@ -10,7 +10,7 @@ import type { DocumentRevisionReviewDetail, ProjectResolutionReviewDetail, Requi
 import { ErrorState } from "../../components/ErrorState";
 import { TableLoading } from "../../components/LoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
-import { formatDateOnly, formatDateTime, reviewTypeLabel } from "../../lib/format";
+import { formatDateOnly, formatDateTime, formatLabel, reviewReasonLabel, reviewTypeLabel } from "../../lib/format";
 import { queryClient } from "../../lib/queryClient";
 
 export function ReviewDetailPage() {
@@ -121,7 +121,7 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
       <header className="requirement-review-heading">
         <div>
           <h1>Requirement review</h1>
-          <p>{detail.review.status === "PENDING" ? "Proposed change awaits a human decision. No authoritative update has been applied." : `This review has been ${detail.review.status === "REJECTED" ? "rejected" : "approved"}.`}</p>
+          <p>{detail.review.status === "PENDING" ? "This proposed change is waiting for review. The project has not been updated." : `This review has been ${detail.review.status === "REJECTED" ? "rejected" : "approved"}.`}</p>
         </div>
         <p>{correctionReview ? changeLabel : reviewTypeLabel(detail.review_type)}<br />{formatDateTime(detail.review.created_at)}</p>
       </header>
@@ -157,7 +157,7 @@ function RequirementReview({ detail }: { detail: RequirementReviewDetail }) {
       </RequirementReviewSection>
       {!correctionReview ? <RequirementReviewSection title="Evidence"><RequirementEvidenceTable evidence={detail.handoff.evidence} /></RequirementReviewSection> : null}
       <RequirementReviewSection title="Review basis">
-        <dl className="review-basis-record"><div><dt>Decision</dt><dd>{correctionReview ? "Human review required" : detail.handoff.transition_preview.policy.decision}</dd></div><div><dt>Reason</dt><dd>{detail.handoff.transition_preview.policy.reasons.join(" ") || "No reason recorded"}</dd></div>{detail.handoff.reconciliation.concerns.map((item, index) => <div key={`concern-${index}`}><dt>Concern</dt><dd>{item.description}</dd></div>)}{detail.handoff.reconciliation.conflicts.map((item, index) => <div key={`conflict-${index}`}><dt>Conflict</dt><dd>{item.description}</dd></div>)}{!correctionReview ? <div><dt>Technical definition</dt><dd><span className="technical-id">{detail.handoff.transition_preview.policy.policy_version}</span>{detail.handoff.transition_preview.policy.triggered_rule_ids.map((id) => <span className="technical-id" key={id}>{id}</span>)}</dd></div> : null}</dl>
+        <dl className="review-basis-record"><div><dt>Decision</dt><dd>{correctionReview ? "Human review required" : formatLabel(detail.handoff.transition_preview.policy.decision)}</dd></div><div><dt>Reason</dt><dd>{reviewReasonLabel(detail.handoff.transition_preview.policy.reasons.join(" ") || "No reason recorded")}</dd></div>{detail.handoff.reconciliation.concerns.map((item, index) => <div key={`concern-${index}`}><dt>Concern</dt><dd>{item.description}</dd></div>)}{detail.handoff.reconciliation.conflicts.map((item, index) => <div key={`conflict-${index}`}><dt>Conflict</dt><dd>{item.description}</dd></div>)}</dl>
       </RequirementReviewSection>
       {action.isError ? <p className="form-error" role="alert">{reviewActionError(action.error)}</p> : null}
       {detail.allowed_actions.length ? <div className="decision-actions">

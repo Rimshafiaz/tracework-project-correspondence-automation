@@ -40,7 +40,7 @@ export function ProjectActivityList({
 
 function attributionLabel(event: ProjectActivityEvent): string {
   if (event.attribution === "AUTOMATIC") return "Automatic";
-  if (event.authenticated_operator_subject) return "Authenticated operator";
+  if (event.authenticated_operator_subject) return "Team member";
   if (event.operator_supplied_actor_label) {
     return `Historical operator: ${event.operator_supplied_actor_label}`;
   }

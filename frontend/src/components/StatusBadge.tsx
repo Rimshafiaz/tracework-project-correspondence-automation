@@ -1,12 +1,10 @@
 import type { ProjectStatus, ReplyDraftStatus, RequirementState } from "../api/types";
+import { formatLabel } from "../lib/format";
 
 export function StatusBadge({
   status,
 }: {
   status: ProjectStatus | RequirementState | ReplyDraftStatus;
 }) {
-  const label = status === "ACTIVE" || status === "CLOSED" || status === "RETRACTED"
-    ? `${status[0]}${status.slice(1).toLowerCase()}`
-    : status;
-  return <span className={`status status-${status.toLowerCase()}`}>{label}</span>;
+  return <span className={`status status-${status.toLowerCase()}`}>{formatLabel(status)}</span>;
 }

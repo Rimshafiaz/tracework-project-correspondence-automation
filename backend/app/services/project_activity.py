@@ -265,7 +265,9 @@ class ProjectActivityService:
             else:
                 changes = []
                 if correction.proposed_expected_date is not None:
-                    changes.append(f"expected date changed from {correction.previous_expected_date or 'not set'} to {correction.proposed_expected_date}")
+                    previous_date = correction.previous_expected_date.strftime("%d %B %Y") if correction.previous_expected_date else "not set"
+                    proposed_date = correction.proposed_expected_date.strftime("%d %B %Y")
+                    changes.append(f"expected date changed from {previous_date} to {proposed_date}")
                 if correction.proposed_state is not None:
                     changes.append(f"state changed from {correction.previous_state.value.lower()} to {correction.proposed_state.value.lower()}")
                 summary = f'Requirement "{name}": {"; ".join(changes)} after later correspondence.'
@@ -318,7 +320,7 @@ class ProjectActivityService:
                     ProjectActivityType.REQUIREMENT_CHANGE_APPLIED,
                     (
                         f'Requirement "{requirement_name}" moved '
-                        f"{effect.current_state.value} → {effect.proposed_state.value}."
+                        f"{effect.current_state.value.title()} → {effect.proposed_state.value.title()}."
                     ),
                     event_id=uuid5(audit.id, str(effect.requirement_id)),
                     requirement_id=effect.requirement_id,

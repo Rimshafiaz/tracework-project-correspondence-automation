@@ -30,11 +30,12 @@ describe("LineagePanel", () => {
     renderWithProviders(<LineagePanel transitionId="transition-1" onClose={vi.fn()} />);
     expect(await screen.findByRole("heading", { name: "At decision time" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Current state" })).toBeInTheDocument();
-    expect(screen.getByText("Requirement change: OPEN to PARTIAL")).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "OPEN" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "PARTIAL" })).toBeInTheDocument();
-    expect(screen.getByText("SATISFIED")).toBeInTheDocument();
+    expect(screen.getByText("Requirement change: Open to Partial")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Open" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Partial" })).toBeInTheDocument();
+    expect(screen.getByText("Satisfied")).toBeInTheDocument();
     expect(screen.queryByText(/"requirement_state"/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("rowheader", { name: "Project id" })).not.toBeInTheDocument();
   });
 
   it("distinguishes historical evidence validity from current invalidation", async () => {
@@ -55,21 +56,34 @@ describe("LineagePanel", () => {
     );
   });
 
+  it("keeps correction record identifiers out of the evidence copy", async () => {
+    getTransitionLineage.mockResolvedValue({
+      ...lineage,
+      evidence: [{
+        ...lineage.evidence[0],
+        invalidation_reason: "Approved correction review 0b17f196-8631-45f5-84be-f39902633c25",
+      }],
+    });
+    renderWithProviders(<LineagePanel transitionId="transition-1" onClose={vi.fn()} />);
+    expect(await screen.findByText(/Current invalidation:/)).toHaveTextContent("Approved correction");
+    expect(screen.queryByText(/0b17f196/)).not.toBeInTheDocument();
+  });
+
   it("formats primary policy and fallback transition values for readers", async () => {
     getTransitionLineage.mockResolvedValue({
       ...lineage,
       transition: {
         ...lineage.transition,
         requirement_effects: [],
-        historical_current_state: { requirement_state: "OPEN", expected_date: "2026-10-12" },
-        historical_proposed_state: { requirement_state: "PARTIAL", expected_date: "2026-10-12" },
+        historical_current_state: { project_id: "project-1", requirement_state: "OPEN", expected_date: "2026-10-12" },
+        historical_proposed_state: { project_id: "project-1", requirement_state: "PARTIAL", expected_date: "2026-10-12" },
       },
     });
     renderWithProviders(<LineagePanel transitionId="transition-1" onClose={vi.fn()} />);
     const why = (await screen.findByRole("heading", { name: "Why this changed" })).closest("section");
     expect(why).not.toBeNull();
     expect(within(why as HTMLElement).getByText("Allowed")).toBeInTheDocument();
-    expect(screen.getByText("Requirement change: OPEN to PARTIAL")).toBeInTheDocument();
+    expect(screen.getByText("Requirement change: Open to Partial")).toBeInTheDocument();
     expect(screen.getAllByText(formatDateOnly("2026-10-12")).length).toBeGreaterThan(0);
     expect(within(why as HTMLElement).queryByText("ALLOW_AUTO_ACTION")).not.toBeInTheDocument();
   });

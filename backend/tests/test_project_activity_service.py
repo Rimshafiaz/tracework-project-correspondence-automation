@@ -87,7 +87,7 @@ def test_approved_correction_activity_explains_historical_values(kind):
     assert event.requirement_id == requirement_id
     assert event.authenticated_operator_subject == "operator"
     assert "later correspondence" in event.summary
-    assert ("2026-10-10 to 2026-10-20" if kind == "CORRECTION" else "no longer applicable") in event.summary
+    assert ("10 October 2026 to 20 October 2026" if kind == "CORRECTION" else "no longer applicable") in event.summary
 
 
 def test_retraction_follow_up_cancellation_is_derived_once():
@@ -283,7 +283,7 @@ def test_requirement_application_expands_to_readable_per_requirement_events() ->
     event = result.events[0]
     assert event.event_id == uuid5(audit.id, str(requirement_id))
     assert event.requirement_id == requirement_id
-    assert event.summary == 'Requirement "Security review" moved OPEN → PARTIAL.'
+    assert event.summary == 'Requirement "Security review" moved Open → Partial.'
     assert event.state_transition_id == transition_id
 
 

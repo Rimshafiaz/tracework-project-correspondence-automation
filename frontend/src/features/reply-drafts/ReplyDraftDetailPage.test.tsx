@@ -35,6 +35,7 @@ describe("ReplyDraftDetailPage", () => {
     expect(await screen.findByRole("heading", { name: "Reply draft" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry send" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Generated original" })).not.toBeInTheDocument();
   });
 
   it("shows retry only when the backend allows fresh send revalidation", async () => {
@@ -62,5 +63,15 @@ describe("ReplyDraftDetailPage", () => {
     await user.type(screen.getByLabelText("Subject"), "Edited");
     await user.click(screen.getByRole("button", { name: "Save edit" }));
     expect(api.editReplyDraft).toHaveBeenCalledWith("draft-1", { subject: "Edited", body: "Generated body" });
+  });
+
+  it("shows the generated original when an edit exists", async () => {
+    api.getReplyDraft.mockResolvedValue({
+      ...draft,
+      edited: { subject: "Edited", body: "Edited body" },
+      effective: { subject: "Edited", body: "Edited body" },
+    });
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Generated original" })).toBeInTheDocument();
   });
 });
