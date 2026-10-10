@@ -451,6 +451,7 @@ class EvaluationCaseResult(BaseModel):
     failed_checks: tuple[EvaluationFailedCheck, ...] = ()
     diagnostics: tuple[str, ...] = ()
     models: tuple[EvaluationModelMetadata, ...] = ()
+    execution_details: dict[str, JsonValue] = Field(default_factory=dict)
     error: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
     @model_validator(mode="after")

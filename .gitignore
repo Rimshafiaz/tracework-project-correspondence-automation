@@ -18,3 +18,6 @@ frontend/dist/
 frontend/coverage/
 
 screens/
+
+/backend/evaluation_results/held_out/*.json
+/backend/evaluation_results/held_out/*.log

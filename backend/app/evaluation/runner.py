@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from hashlib import sha256
+from pydantic_ai.exceptions import ModelHTTPError
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -39,11 +40,11 @@ from app.services.follow_up_lifecycle import FollowUpLifecycleService
 from app.services.policy.project_identity_authorization import ProjectIdentityAuthorizationService
 from app.services.policy.requirement_authorization import RequirementPolicyAuthorizationService
 from app.services.policy.requirement_context import RequirementPolicyContextService
-from app.services.project_resolution import ProjectResolutionService
+from app.services.project_resolution import ProjectResolutionService, ProjectResolutionValidationError
 from app.services.project_resolution_context import ProjectResolutionContextService
 from app.services.project_resolution_review_creation import ProjectResolutionReviewCreationService
 from app.services.project_resolution_review_decision import ProjectResolutionReviewDecisionError, ProjectResolutionReviewDecisionService
-from app.services.requirement_reconciliation import RequirementReconciliationService
+from app.services.requirement_reconciliation import RequirementReconciliationService, RequirementReconciliationValidationError
 from app.services.requirement_reconciliation_context import RequirementReconciliationContextService
 from app.services.requirement_review_creation import RequirementReviewCreationService
 from app.services.requirement_review_decision import RequirementReviewDecisionError, RequirementReviewDecisionService
@@ -111,10 +112,48 @@ def _seed_case(session, case):
     return event, labels
 
 
+def _diagnostic_error(exc, settings):
+    details = {"exception": type(exc).__name__}
+    if isinstance(exc, (ProjectResolutionValidationError, RequirementReconciliationValidationError, ModelHTTPError)):
+        message = str(exc)
+        for value in (settings.google_api_key, settings.groq_api_key, settings.openrouter_api_key):
+            if value:
+                message = message.replace(value.get_secret_value(), "[REDACTED]")
+        message = message.replace(settings.database_url, "[REDACTED]")
+        details["message"] = message[:2000]
+    if isinstance(exc, ModelHTTPError):
+        details["http_status"] = exc.status_code
+    return details
+
+
+class _CaptureAgent:
+    """Observe typed outputs only; preserve the production call and exception."""
+
+    def __init__(self, agent, stage, settings, records):
+        self.agent, self.stage, self.settings, self.records = agent, stage, settings, records
+
+    async def run(self, *args, **kwargs):
+        record = {"stage": self.stage,
+            "provider": getattr(self.settings, f"{self.stage}_provider"),
+            "model": getattr(self.settings, f"{self.stage}_model")}
+        self.records.append(record)
+        try:
+            result = await self.agent.run(*args, **kwargs)
+        except Exception as exc:
+            record["failure"] = _diagnostic_error(exc, self.settings)
+            raise
+        record["output"] = result.output.model_dump(mode="json")
+        usage = getattr(result, "usage", None)
+        if usage is not None:
+            record["usage"] = {name: getattr(usage, name) for name in ("requests", "input_tokens", "output_tokens")}
+        return result
+
+
 async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings: Settings,
                               project_agent=None, requirement_agent=None) -> EvaluationCaseResult:
     """Use an explicitly supplied PostgreSQL engine; never select a live DB implicitly."""
     diagnostics, models = [], []
+    details = {"model_runs": []}
     phase = "setup"
     try:
         stages = case.stages
@@ -140,7 +179,9 @@ async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings:
             phase = "PROJECT_RESOLUTION"
             context = ProjectResolutionContextService(correspondence_repository=correspondence, attachment_repository=attachments,
                 project_repository=projects, identifier_repository=identifiers, contact_repository=contacts, project_link_repository=links).build(event.id)
-            resolved = await ProjectResolutionService(agent=project_agent or build_project_resolver_agent(settings),
+            details["project_candidates"] = context.candidates.model_dump(mode="json")
+            resolved = await ProjectResolutionService(agent=_CaptureAgent(project_agent or build_project_resolver_agent(settings),
+                "project_resolver", settings, details["model_runs"]),
                 lineage_repository=lineage, model_identifier=settings.project_resolver_model).resolve(context)
             diagnostics.append(phase)
             proposal, evaluation, reconciliation = resolved.proposal, None, None
@@ -160,7 +201,7 @@ async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings:
 
             if EvaluationStage.REQUIREMENT_RECONCILIATION in stages:
                 if len(authorized_links) > 1:
-                    return EvaluationCaseResult(case_id=case.case_id, status="ERROR", error="Single-case reconciliation currently requires one authorized project", diagnostics=tuple(diagnostics), models=tuple(models))
+                    return EvaluationCaseResult(case_id=case.case_id, status="ERROR", error="Single-case reconciliation currently requires one authorized project", diagnostics=tuple(diagnostics), models=tuple(models), execution_details=details)
                 if not authorized_links:
                     diagnostics.append("REQUIREMENT_RECONCILIATION skipped: project scope was not authorized")
                 else:
@@ -170,7 +211,8 @@ async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings:
                         max_requirements=settings.requirement_reconciler_max_requirements,
                         max_attachments=settings.requirement_reconciler_max_attachments,
                         max_source_characters=settings.requirement_reconciler_max_source_characters).build(authorized_links[0].id)
-                    reconciled = await RequirementReconciliationService(agent=requirement_agent or build_requirement_reconciler_agent(settings),
+                    reconciled = await RequirementReconciliationService(agent=_CaptureAgent(requirement_agent or build_requirement_reconciler_agent(settings),
+                        "requirement_reconciler", settings, details["model_runs"]),
                         lineage_repository=lineage, model_identifier=settings.requirement_reconciler_model).reconcile(context)
                     reconciliation, proposal = reconciled.reconciliation, reconciled.proposal
                     diagnostics.append(phase)
@@ -190,7 +232,7 @@ async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings:
                 phase = "REVIEW_APPLICATION"
                 pending = list(session.scalars(select(ReviewItem).where(ReviewItem.status == ReviewStatus.PENDING)))
                 if len(pending) != 1:
-                    return EvaluationCaseResult(case_id=case.case_id, status="ERROR", error="Explicit review application requires exactly one pending review", diagnostics=tuple(diagnostics), models=tuple(models))
+                    return EvaluationCaseResult(case_id=case.case_id, status="ERROR", error="Explicit review application requires exactly one pending review", diagnostics=tuple(diagnostics), models=tuple(models), execution_details=details)
                 review = pending[0]
                 if review.review_type is ReviewType.PROJECT_RESOLUTION:
                     service = ProjectResolutionReviewDecisionService(session=session, review_repository=reviews,
@@ -216,13 +258,21 @@ async def run_evaluation_case(case: EvaluationCase, *, engine: Engine, settings:
 
             phase = "capture"
             actual = _capture(session, case, labels, resolved.resolution, resolved.proposal, proposal, evaluation, reconciliation)
+            details["selected_evidence"] = [{"evidence_id": labels.get(item.id, str(item.id)),
+                "correspondence_event_id": str(item.correspondence_event_id),
+                "project_id": labels.get(item.project_id, str(item.project_id)) if item.project_id else None,
+                "source_type": item.source_type, "excerpt": item.excerpt,
+                "validity": item.validity.value}
+                for item in lineage.list_proposal_evidence(proposal.id)]
             actual = actual.model_copy(update={"review_application_status": application_status, "application_block_code": block_code})
             result = EvaluationCaseResult(case_id=case.case_id, status="UNSCORED", actual=actual,
-                models=tuple(models), diagnostics=tuple(diagnostics))
+                models=tuple(models), diagnostics=tuple(diagnostics), execution_details=details)
         return result
     except Exception as exc:
         code = getattr(exc, "code", None)
+        details["failure"] = {"phase": phase, **_diagnostic_error(exc, settings)}
         return EvaluationCaseResult(case_id=case.case_id, status="ERROR", diagnostics=tuple(diagnostics), models=tuple(models),
+            execution_details=details,
             error=f"{phase}: {type(exc).__name__}" + (f" ({code.value})" if code is not None and hasattr(code, "value") else ""))
 
 

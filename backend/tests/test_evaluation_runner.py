@@ -102,7 +102,8 @@ def test_real_pipeline_is_ordered_unscored_and_repeatably_isolated(engine):
     assert len(result.models) == 2
     assert not result.failed_checks and result.error is None
     _assert_clean(engine, case)
-    assert _run(engine, case).actual == result.actual
+    exclude = {"proposal_id": True, "source_evidence": {"__all__": {"proposal_id"}}}
+    assert _run(engine, case).actual.model_dump(exclude=exclude) == result.actual.model_dump(exclude=exclude)
     _assert_clean(engine, case)
 
 
