@@ -66,6 +66,18 @@ flowchart LR
 
 Tracework uses AI for semantic interpretation and drafting. Project authorization, mutation policy, review application, evidence validity, and state transitions are enforced in application code.
 
+## AI agents
+
+Tracework uses three focused agents instead of one generic assistant:
+
+| Agent | Role |
+| --- | --- |
+| Project Resolver | Identifies which project an incoming message belongs to and returns evidence-backed candidate signals. |
+| Requirement Reconciler | Compares new correspondence with current requirements and proposes additions, updates, corrections, or retractions. |
+| Reply Drafter | Builds a grounded follow-up from scoped project context when an outstanding commitment needs a response. |
+
+The agents only propose structured outputs. Deterministic policy and human review decide whether project state can change.
+
 ## Product walkthrough
 
 ### Project workspace
@@ -135,7 +147,7 @@ Gmail delivery and follow-up completion are persisted as part of the same audita
 
 Tracework is an authenticated internal operator workspace. Supabase Auth issues access tokens, and the FastAPI backend verifies them through Supabase JWKS before protected project, review, lineage, and reply-draft APIs are served.
 
-The current product is intentionally a shared internal workspace rather than a public multi-tenant SaaS.
+There is no public signup by design: operator accounts are provisioned by the workspace owner rather than created through self-service registration. The current product is intentionally a shared internal workspace rather than a public multi-tenant SaaS.
 
 ## Evaluation
 
