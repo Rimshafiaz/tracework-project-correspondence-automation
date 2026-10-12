@@ -80,7 +80,7 @@ class _PreparedReply:
                   "and we haven't received the final pack yet.\n\n"
                   "Could you please confirm where things stand and when we can expect the signed certificates? "
                   "If anything is holding up submission, let us know so we can coordinate with the consultant.\n\n"
-                  "Best regards,\nElena Ward\nProject Coordinator"),
+                  "Best regards,\nRimsha"),
             grounding_references=references,
         ))
 
@@ -120,18 +120,18 @@ async def seed_portfolio(session: Session) -> dict[str, object]:
     lifecycle = FollowUpLifecycleService(session=session, requirement_repository=requirements,
         follow_up_repository=follow_ups, audit_repository=lineage)
     today = date.today()
-    operator = "elena.ward@alderstone-projects.co.uk"
+    operator = "rimshafiaz63@gmail.com"
     stories = (
-        ("AR-RF-26-014", "Alder Row Retail Refurbishment", "Priya Desai", "priya.desai@carrick-interiors.co.uk", "Site Manager", (
+        ("AR-RF-26-014", "Alder Row Retail Refurbishment", "Sarah Desai", "sarah.desai@arcstone-interiors.com", "Site Manager", (
             ("Revised joinery shop drawings", "Coordinate the reception desk and retail display interfaces.", 5),
             ("Close mezzanine snag items", "Finish the lighting trims and remaining access-panel adjustments.", 9),
             ("Issue weekend access schedule", "Confirm delivery slots and security coverage for the next installation weekend.", 3),
         )),
-        ("WM-HC-26-008", "Westmere Medical Centre", "Sofia Bennett", "sofia.bennett@lynden-building.co.uk", "Contracts Manager", (
+        ("WM-HC-26-008", "Westmere Medical Centre", "Ayesha Malik", "ayesha.malik@vertex-buildworks.com", "Contracts Manager", (
             ("Submit ventilation balancing report", "Provide the signed air-balancing results for the treatment rooms.", 7),
             ("Consultant sign-off on reception finishes", "Arrange final consultant inspection of the reception finishes.", 12),
         )),
-        ("BL-LH-26-021", "Brookfield Logistics Hub", "Marcus Hale", "marcus.hale@fenwick-mep.co.uk", "Commissioning Lead", (
+        ("BL-LH-26-021", "Brookfield Logistics Hub", "Marcus Hale", "marcus.hale@meridian-engineering.com", "Commissioning Lead", (
             ("Signed commissioning certificates", "Submit the signed mechanical and electrical commissioning pack.", -5),
             ("Confirm loading-bay material delivery", "Confirm the dock levellers and safety barriers against the agreed delivery slots.", 4),
         )),
@@ -159,7 +159,7 @@ async def seed_portfolio(session: Session) -> dict[str, object]:
         lineage.create_audit_event(event_type="project_created", actor_type="authenticated_operator",
             actor_identifier=operator, project_id=project.id, details={"name": name, "project_code": code, "synthetic": True})
         project_requirements = []
-        lines = [f"Hi Elena,\n\nFollowing our coordination meeting for {name}, the next commitments are:"]
+        lines = [f"Hi Rimsha,\n\nFollowing our coordination meeting for {name}, I've noted the following submission dates:"]
         for title, description, offset in obligations:
             expected = today + timedelta(days=offset)
             requirement = requirements.create(project_id=project.id, name=title, description=description, expected_date=expected)
@@ -210,31 +210,31 @@ async def seed_portfolio(session: Session) -> dict[str, object]:
 
     joinery = created_requirements[0][0]
     await propose(0, "Alder Row — joinery drawing progress",
-        "Hi Elena,\n\nThe reception desk drawings have been issued to the consultant. "
-        "The retail display details are still being coordinated with the lighting supplier, so that part of the package remains open.\n\nRegards,\nPriya",
+        "Hi Rimsha,\n\nThe reception desk drawings have been issued to the consultant. "
+        "The retail display details are still being coordinated with the lighting supplier, so that part of the package remains open.\n\nRegards,\nSarah",
         lambda evidence: RequirementReconciliation(existing_impacts=(ExistingRequirementImpact(
             requirement_id=joinery.id, disposition="UPDATE_PROPOSED", proposed_state="PARTIAL",
-            evidence=(evidence,), interpretation="Reception details issued; display details remain outstanding."),)))
+            evidence=(evidence,), interpretation="The reception desk drawings have been issued, but the retail display details are still being coordinated."),)))
     ventilation = created_requirements[1][0]
     replacement = ventilation.expected_date + timedelta(days=3)
     pending_id = await propose(1, "Westmere — balancing report submission",
-        f"Hi Elena,\n\nThe balancing engineer needs one additional visit after the treatment-room ceilings are closed. "
+        f"Hi Rimsha,\n\nThe balancing engineer needs one additional visit after the treatment-room ceilings are closed. "
         f"We propose submitting the signed report on {replacement.strftime('%d %B %Y')} instead. "
-        "Please confirm whether this works with the consultant's inspection programme.\n\nKind regards,\nSofia",
+        "Please confirm whether this works with the consultant's inspection programme.\n\nKind regards,\nAyesha",
         lambda evidence: RequirementReconciliation(existing_impacts=(ExistingRequirementImpact(
             requirement_id=ventilation.id, disposition="UPDATE_PROPOSED", proposed_expected_date=replacement,
             evidence=(evidence,), interpretation="The proposed delay affects the consultant inspection programme and needs approval."),)))
     certificates = created_requirements[2][0]
     corrected = today - timedelta(days=2)
     approved_id = await propose(2, "Brookfield — corrected certificate commitment",
-        f"Hi Elena,\n\nPlease correct the commissioning-pack date in my earlier coordination note. "
+        f"Hi Rimsha,\n\nI've spotted an error in the commissioning-pack date in my earlier coordination note. "
         f"The agreed submission date was {corrected.strftime('%d %B %Y')}, not {certificates.expected_date.strftime('%d %B %Y')}. "
         "The consultant's signatures are still outstanding; I will send the complete pack once these are returned.\n\nBest regards,\nMarcus",
         lambda evidence: RequirementReconciliation(corrections=(RequirementCorrectionProposal(
             kind="CORRECTION", requirement_id=certificates.id, previous_state=RequirementState.OPEN,
             previous_expected_date=certificates.expected_date, proposed_expected_date=corrected,
             target_evidence_item_ids=(prior_evidence[2][0].id,), evidence=(evidence,),
-            interpretation="Explicit replacement of the earlier submission date; the obligation remains outstanding."),)), approve=True)
+            interpretation="Marcus has corrected the submission date in his earlier note. The signed commissioning pack is still outstanding."),)), approve=True)
     FollowUpDueService(session=session, follow_up_repository=follow_ups, audit_repository=lineage).process_due()
     session.commit()
     due = [item for item in follow_ups.list_actionable_due() if item.requirement_id == certificates.id]

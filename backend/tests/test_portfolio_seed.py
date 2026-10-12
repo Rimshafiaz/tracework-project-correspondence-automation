@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthenticatedOperator, require_authenticated_operator
 from app.core.config import Settings
 from app.db.base import Base
-from app.models import CorrespondenceEvent, EvidenceItem, FollowUp, Project, ReplyDraft, Requirement, ReviewItem, StateTransition
+from app.models import AuditEvent, CorrespondenceEvent, EvidenceItem, FollowUp, Project, ReplyDraft, Requirement, ReviewItem, StateTransition
 from app.models.enums import EvidenceValidity, FollowUpStatus, RequirementState, ReviewStatus
 from app.portfolio_seed import seed_portfolio, validate_target
 
@@ -65,6 +65,12 @@ def test_offline_seed_has_coherent_api_visible_history_and_fails_cleanly_on_reru
                               (Project, CorrespondenceEvent, Requirement, ReviewItem, FollowUp, ReplyDraft)}
                     assert counts == {"Project": 3, "CorrespondenceEvent": 6, "Requirement": 7,
                                       "ReviewItem": 2, "FollowUp": 8, "ReplyDraft": 1}
+                    attributed = session.scalars(select(AuditEvent.actor_identifier).where(AuditEvent.actor_identifier.is_not(None))).all()
+                    assert attributed and set(attributed) == {"rimshafiaz63@gmail.com"}
+                    for event in session.scalars(select(CorrespondenceEvent)):
+                        assert event.source_metadata["recipient"] == "rimshafiaz63@gmail.com"
+                        assert event.body.startswith("Hi Rimsha,")
+                        assert "Elena" not in event.body
                     assert session.get(ReviewItem, UUID(result["pending_review_id"])).status is ReviewStatus.PENDING
                     assert session.get(ReviewItem, UUID(result["approved_review_id"])).status is ReviewStatus.APPROVED
                     due = session.get(FollowUp, UUID(result["follow_up_id"]))
@@ -98,10 +104,20 @@ def test_offline_seed_has_coherent_api_visible_history_and_fails_cleanly_on_reru
                     with TestClient(app) as client:
                         listed = client.get("/projects")
                         assert listed.status_code == 200 and len(listed.json()) == 3
+                        expected_contacts = dict(zip(result["project_ids"], (
+                            ("Sarah Desai", "sarah.desai@arcstone-interiors.com"),
+                            ("Ayesha Malik", "ayesha.malik@vertex-buildworks.com"),
+                            ("Marcus Hale", "marcus.hale@meridian-engineering.com"),
+                        )))
                         for project_id in result["project_ids"]:
                             workspace = client.get(f"/projects/{project_id}")
                             assert workspace.status_code == 200, workspace.text
                             assert all(item["name"] for item in workspace.json()["requirements"])
+                            contact = workspace.json()["contacts"][0]
+                            assert (contact["display_name"], contact["email"]) == expected_contacts[project_id]
+                            for event in session.scalars(select(CorrespondenceEvent).where(CorrespondenceEvent.sender_email == contact["email"])):
+                                assert event.sender_name == contact["display_name"]
+                                assert event.body.endswith(contact["display_name"].split()[0]) or event.body.endswith(contact["display_name"])
                             activity = client.get(f"/projects/{project_id}/activity")
                             assert activity.status_code == 200, activity.text
                             assert activity.json()["events"]
@@ -116,6 +132,7 @@ def test_offline_seed_has_coherent_api_visible_history_and_fails_cleanly_on_reru
                         assert draft.status_code == 200, draft.text
                         assert draft.json()["status"] == "GENERATED"
                         assert draft.json()["effective"]["body"].startswith("Hi Marcus,")
+                        assert draft.json()["effective"]["body"].endswith("Best regards,\nRimsha")
                         assert not draft.json()["can_send"]
                         assert draft.json()["sent_at"] is None
                     with pytest.raises(ValueError, match="empty"):
