@@ -153,6 +153,19 @@ button:disabled { cursor: not-allowed; opacity: 0.58; }
 .contact-record dd { color: var(--secondary); }
 .workspace-registers { display: grid; gap: 28px; margin-top: 23px; }
 .workspace-section { min-width: 0; }
+.reply-draft-detail { max-width: 820px; }
+.reply-draft-detail .reply-draft-metadata { display: flex; flex-wrap: wrap; gap: 16px 32px; margin: 0; padding: 12px 0 16px; }
+.reply-draft-metadata > div { display: grid; gap: 4px; min-width: 0; }
+.reply-draft-preview { margin-top: 20px; }
+.reply-draft-preview > h2 { margin-bottom: 12px; }
+.reply-draft-subject { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.reply-draft-subject > span { color: var(--secondary); font-size: 12px; }
+.reply-draft-subject > h3 { margin: 0; overflow-wrap: anywhere; }
+.reply-draft-detail .reply-draft-body { max-width: 68ch; margin: 16px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.reply-draft-actions, .reply-draft-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.reply-draft-original { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); }
+.reply-draft-preview label { display: grid; gap: 6px; margin-bottom: 12px; }
+.reply-draft-preview input, .reply-draft-preview textarea { width: 100%; }
 .section-heading-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .requirement-table .data-table-header, .requirement-row { grid-template-columns: minmax(260px, 1fr) 140px 150px; }
 .requirement-row { min-height: 64px; padding: 10px 14px; }

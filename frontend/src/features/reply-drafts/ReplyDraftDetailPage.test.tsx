@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,5 +73,18 @@ describe("ReplyDraftDetailPage", () => {
     });
     renderPage();
     expect(await screen.findByRole("heading", { name: "Generated original" })).toBeInTheDocument();
+  });
+
+  it("preserves email paragraphs and keeps generated-draft actions with the preview", async () => {
+    const body = "Hi Marcus,\n\nCould you confirm the submission date?\n\nBest regards,\nRimsha";
+    api.getReplyDraft.mockResolvedValue({ ...draft, status: "GENERATED", can_approve: true, can_send: false,
+      effective: { subject: "Commissioning certificates", body }, generated: { subject: "Commissioning certificates", body } });
+    renderPage();
+    const preview = await screen.findByRole("region", { name: "Current reply" });
+    expect(within(preview).getByRole("heading", { name: "Commissioning certificates" })).toBeInTheDocument();
+    expect(preview.querySelector(".reply-draft-body")?.textContent).toBe(body);
+    for (const name of ["Edit", "Approve", "Reject"]) expect(within(preview).getByRole("button", { name })).toBeInTheDocument();
+    expect(screen.getByText("Generated")).toBeInTheDocument();
+    for (const id of [draft.follow_up_id, draft.source_correspondence_event_id, draft.ai_proposal_id]) expect(screen.queryByText(id)).not.toBeInTheDocument();
   });
 });
