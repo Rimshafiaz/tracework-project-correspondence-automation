@@ -8,7 +8,6 @@ Tracework turns incoming project communication into structured, auditable projec
 
 > The hosted API uses Render's free tier, so the first request after a period of inactivity can take longer while the service starts.
 
-![Tracework evidence-backed requirement review](docs/screenshots/04-evidence-lineage.jpg)
 
 ## What it does
 
